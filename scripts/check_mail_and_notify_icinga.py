@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 import argparse
+import base64
+import hashlib
+import hmac
 import re
 import shlex
 import imaplib
 import json
 import os
+import secrets
 import ssl
 import smtplib
 import subprocess
@@ -12,9 +16,13 @@ import sys
 import urllib.error
 import urllib.request
 import unicodedata
+from datetime import datetime, timezone
+from email import policy
+from email.parser import BytesParser
 from email.message import EmailMessage
+from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -104,6 +112,12 @@ def _add_mail_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--subject-contains", default=os.getenv("MAIL_SUBJECT_CONTAINS", ""))
     parser.add_argument("--from-contains", default=os.getenv("MAIL_FROM_CONTAINS", ""))
     parser.add_argument("--body-contains", default=os.getenv("MAIL_BODY_CONTAINS", ""))
+    parser.add_argument("--mail-jwt-secret", default=os.getenv("MAIL_CHECK_JWT_SECRET", ""))
+    parser.add_argument(
+        "--mail-jwt-max-age-seconds",
+        type=int,
+        default=int(os.getenv("MAIL_CHECK_JWT_MAX_AGE_SECONDS", "86400")),
+    )
     parser.add_argument("--include-seen", action="store_true", default=os.getenv("MAIL_INCLUDE_SEEN", "0") == "1")
     parser.add_argument("--delete-match", action="store_true", default=os.getenv("MAIL_DELETE_MATCH", "0") == "1")
 
@@ -132,6 +146,12 @@ def _add_send_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--send-to", default=os.getenv("MAIL_SEND_TO"), required=not os.getenv("MAIL_SEND_TO"))
     parser.add_argument("--send-from", default=os.getenv("MAIL_SEND_FROM"), required=not os.getenv("MAIL_SEND_FROM"))
+    parser.add_argument("--mail-jwt-secret", default=os.getenv("MAIL_CHECK_JWT_SECRET", ""))
+    parser.add_argument(
+        "--mail-jwt-max-age-seconds",
+        type=int,
+        default=int(os.getenv("MAIL_CHECK_JWT_MAX_AGE_SECONDS", "86400")),
+    )
     parser.add_argument(
         "--send-subject",
         default=os.getenv("MAIL_SEND_SUBJECT", "IcingaMail: Send test"),
@@ -246,8 +266,76 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _decode_header_val(value: str) -> str:
-    # For IMAP SEARCH, keep criteria simple and ASCII-safe.
-    return value.encode("ascii", errors="ignore").decode("ascii")
+    # Keep criteria ASCII-safe and quote as IMAP string atom.
+    safe = value.encode("ascii", errors="ignore").decode("ascii")
+    escaped = safe.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _b64url_decode(value: str) -> bytes:
+    padding = "=" * ((4 - len(value) % 4) % 4)
+    return base64.urlsafe_b64decode(value + padding)
+
+
+def _create_mailcheck_jwt(secret: str, issued_at: datetime) -> str:
+    header = {"alg": "HS256", "typ": "JWT"}
+    iat = int(issued_at.timestamp())
+    payload = {
+        "iss": "mail-check",
+        "sub": "mail-delivery-check",
+        "iat": iat,
+        "jti": secrets.token_hex(12),
+    }
+    header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+    signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
+    signature = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+    signature_b64 = _b64url_encode(signature)
+    return f"{header_b64}.{payload_b64}.{signature_b64}"
+
+
+def _verify_mailcheck_jwt(token: str, secret: str, max_age_seconds: int) -> datetime:
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise RuntimeError("JWT format invalid.")
+
+    header_b64, payload_b64, signature_b64 = parts
+    signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
+    expected_signature = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+    try:
+        provided_signature = _b64url_decode(signature_b64)
+    except Exception as exc:
+        raise RuntimeError("JWT signature encoding invalid.") from exc
+    if not hmac.compare_digest(expected_signature, provided_signature):
+        raise RuntimeError("JWT signature invalid.")
+
+    try:
+        header = json.loads(_b64url_decode(header_b64).decode("utf-8"))
+        payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise RuntimeError("JWT payload invalid.") from exc
+
+    if header.get("alg") != "HS256":
+        raise RuntimeError("JWT algorithm not supported.")
+
+    iat = payload.get("iat")
+    if not isinstance(iat, int):
+        raise RuntimeError("JWT iat claim missing.")
+
+    issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
+    now_utc = datetime.now(timezone.utc)
+    max_age = max(1, max_age_seconds)
+    age = (now_utc - issued_at).total_seconds()
+    if age < 0:
+        raise RuntimeError("JWT iat is in the future.")
+    if age > max_age:
+        raise RuntimeError("JWT expired.")
+
+    return issued_at
 
 
 def _parse_template_sections(path: str) -> Tuple[Dict[str, str], List[str]]:
@@ -292,6 +380,17 @@ def _parse_template_sections(path: str) -> Tuple[Dict[str, str], List[str]]:
     if current_name:
         headers[current_name] = " ".join(current_value_parts).strip()
 
+    # For full mail source templates, decode body content via email parser
+    # to avoid quoted-printable hard wraps polluting body criteria.
+    try:
+        with open(path, "rb") as f:
+            message = BytesParser(policy=policy.default).parse(f)
+        parsed_body = _extract_body_text(message).splitlines()
+        if any(line.strip() for line in parsed_body):
+            body_lines = parsed_body
+    except Exception:
+        pass
+
     return headers, body_lines
 
 
@@ -320,6 +419,11 @@ def _extract_body_contains(body_lines: List[str]) -> str:
         if not line:
             continue
         if line.startswith("--"):
+            continue
+        lowered = line.lower()
+        if lowered.startswith("mailcheckjwt:"):
+            continue
+        if lowered.startswith("mailchecksentat:"):
             continue
         return line
     return ""
@@ -527,12 +631,156 @@ def find_matching_message_ids(args: argparse.Namespace) -> Tuple[List[bytes], st
 
         msg_ids = data[0].split() if data and data[0] else []
 
-        if msg_ids and args.delete_match:
-            for msg_id in msg_ids:
-                imap.store(msg_id, "+FLAGS", "\\Deleted")
+        return msg_ids, " ".join(criteria)
+    finally:
+        try:
+            imap.close()
+        except Exception:
+            pass
+        imap.logout()
+
+
+def _extract_body_text(message) -> str:
+    if message.is_multipart():
+        text_parts: List[str] = []
+        for part in message.walk():
+            if part.get_content_maintype() != "text":
+                continue
+            if part.get_content_disposition() == "attachment":
+                continue
+            try:
+                text_parts.append(part.get_content())
+            except Exception:
+                payload = part.get_payload(decode=True) or b""
+                text_parts.append(payload.decode("utf-8", errors="replace"))
+        return "\n".join(text_parts)
+
+    try:
+        return message.get_content()
+    except Exception:
+        payload = message.get_payload(decode=True) or b""
+        return payload.decode("utf-8", errors="replace")
+
+
+def _parse_mailcheck_timestamp(value: str) -> Optional[datetime]:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    try:
+        if cleaned.endswith("Z"):
+            cleaned = cleaned[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(cleaned)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _extract_mailcheck_meta(message) -> Tuple[str, Optional[datetime]]:
+    header_token = (message.get("X-Mail-Check-Jwt") or "").strip()
+    header_sent_at = (message.get("X-Mail-Check-Sent-At") or "").strip()
+    sent_at = _parse_mailcheck_timestamp(header_sent_at)
+
+    body = _extract_body_text(message)
+    body_token = ""
+    token_match = re.search(r"(?im)^MailCheckJwt:\s*(.+?)\s*$", body)
+    if token_match:
+        body_token = token_match.group(1).strip()
+
+    sent_match = re.search(r"(?im)^MailCheckSentAt:\s*(.+?)\s*$", body)
+    if sent_match and not sent_at:
+        sent_at = _parse_mailcheck_timestamp(sent_match.group(1))
+
+    token = header_token or body_token
+    return token, sent_at
+
+
+def _extract_received_timestamp(message) -> Optional[datetime]:
+    for received in message.get_all("Received", []):
+        candidate = received.rsplit(";", 1)[-1].strip() if ";" in received else received.strip()
+        if not candidate:
+            continue
+        try:
+            parsed = parsedate_to_datetime(candidate)
+        except (TypeError, ValueError):
+            continue
+        if parsed is None:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    return None
+
+
+def _collect_valid_matches(
+    args: argparse.Namespace, msg_ids: List[bytes]
+) -> Tuple[List[bytes], Dict[str, Optional[float]]]:
+    if not msg_ids:
+        return [], {
+            "mail_delivery_seconds": None,
+            "send_to_delivery_seconds": None,
+            "delivery_to_check_seconds": None,
+        }
+
+    ctx = ssl.create_default_context()
+    imap = imaplib.IMAP4_SSL(args.imap_host, args.imap_port, ssl_context=ctx)
+    now_utc = datetime.now(timezone.utc)
+    valid_ids: List[bytes] = []
+    metrics: Dict[str, Optional[float]] = {
+        "mail_delivery_seconds": None,
+        "send_to_delivery_seconds": None,
+        "delivery_to_check_seconds": None,
+    }
+
+    try:
+        imap.login(args.imap_user, args.imap_password)
+        status, _ = imap.select(args.mailbox)
+        if status != "OK":
+            raise RuntimeError(f"Cannot select mailbox {args.mailbox!r}")
+
+        for msg_id in reversed(msg_ids):
+            fetch_status, fetch_data = imap.fetch(msg_id, "(RFC822)")
+            if fetch_status != "OK" or not fetch_data:
+                continue
+
+            raw_email = b""
+            for chunk in fetch_data:
+                if isinstance(chunk, tuple) and len(chunk) > 1 and isinstance(chunk[1], (bytes, bytearray)):
+                    raw_email = bytes(chunk[1])
+                    break
+            if not raw_email:
+                continue
+
+            message = BytesParser(policy=policy.default).parsebytes(raw_email)
+            message_token, sent_at = _extract_mailcheck_meta(message)
+            try:
+                jwt_issued_at = _verify_mailcheck_jwt(
+                    token=message_token,
+                    secret=args.mail_jwt_secret,
+                    max_age_seconds=args.mail_jwt_max_age_seconds,
+                )
+            except Exception:
+                continue
+
+            valid_ids.append(msg_id)
+            if metrics["mail_delivery_seconds"] is None:
+                received_at = _extract_received_timestamp(message)
+                end_to_end = max(0.0, (now_utc - jwt_issued_at).total_seconds())
+                metrics["mail_delivery_seconds"] = end_to_end
+
+                if received_at:
+                    send_to_delivery = max(0.0, (received_at - jwt_issued_at).total_seconds())
+                    delivery_to_check = max(0.0, (now_utc - received_at).total_seconds())
+                    metrics["send_to_delivery_seconds"] = send_to_delivery
+                    metrics["delivery_to_check_seconds"] = delivery_to_check
+
+        if args.delete_match and valid_ids:
+            for valid_id in valid_ids:
+                imap.store(valid_id, "+FLAGS", "\\Deleted")
             imap.expunge()
 
-        return msg_ids, " ".join(criteria)
+        return valid_ids, metrics
     finally:
         try:
             imap.close()
@@ -548,13 +796,24 @@ def _normalize_api_code(value: object) -> int:
         return 0
 
 
+def _split_plugin_output_and_perfdata(output: str) -> Tuple[str, List[str]]:
+    if "|" not in output:
+        return output.strip(), []
+    plugin_output, perfdata_raw = output.split("|", 1)
+    perf_items = [item.strip() for item in perfdata_raw.strip().split() if item.strip()]
+    return plugin_output.strip(), perf_items
+
+
 def _build_icinga_submit(endpoint: str, args: argparse.Namespace, exit_status: int, output: str) -> Tuple[dict, dict]:
+    plugin_output, performance_data = _split_plugin_output_and_perfdata(output)
     payload = {
         "type": "Service",
         "filter": f'host.name=="{args.icinga_host}" && service.name=="{args.icinga_service}"',
         "exit_status": exit_status,
-        "plugin_output": output,
+        "plugin_output": plugin_output,
     }
+    if performance_data:
+        payload["performance_data"] = performance_data
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -586,7 +845,10 @@ def submit_passive_result(args: argparse.Namespace, exit_status: int, output: st
     payload, headers = _build_icinga_submit(endpoint, args, exit_status, output)
 
     if args.debug_icinga:
+        split_output, split_perfdata = _split_plugin_output_and_perfdata(output)
         print("Icinga endpoint:", endpoint)
+        print("Icinga plugin_output:", split_output)
+        print("Icinga performance_data:", split_perfdata if split_perfdata else "[]")
         print("Icinga payload:", json.dumps(payload, ensure_ascii=False))
         print("Icinga curl:", _build_curl_command(endpoint, args, payload))
         if args.icinga_dry_run:
@@ -644,11 +906,17 @@ def _missing_icinga_args(args: argparse.Namespace) -> List[str]:
 
 
 def _build_send_message(args: argparse.Namespace) -> EmailMessage:
+    sent_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    jwt_value = _create_mailcheck_jwt(args.mail_jwt_secret, datetime.now(timezone.utc))
+    body = f"MailCheckJwt: {jwt_value}\nMailCheckSentAt: {sent_at}\n\n{args.send_body}"
+
     message = EmailMessage()
     message["From"] = args.send_from
     message["To"] = args.send_to
     message["Subject"] = args.send_subject
-    message.set_content(args.send_body)
+    message["X-Mail-Check-Jwt"] = jwt_value
+    message["X-Mail-Check-Sent-At"] = sent_at
+    message.set_content(body)
     return message
 
 
@@ -669,6 +937,10 @@ def _send_via_sendmail(args: argparse.Namespace, message: EmailMessage) -> None:
 
 
 def _send_via_mail_cmd(args: argparse.Namespace) -> None:
+    sent_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    jwt_value = _create_mailcheck_jwt(args.mail_jwt_secret, datetime.now(timezone.utc))
+    body = f"MailCheckJwt: {jwt_value}\nMailCheckSentAt: {sent_at}\n\n{args.send_body}"
+
     command = shlex.split(args.mail_command)
     if not command:
         raise RuntimeError("MAIL_SEND_MAIL_COMMAND is empty.")
@@ -679,7 +951,7 @@ def _send_via_mail_cmd(args: argparse.Namespace) -> None:
 
     proc = subprocess.run(
         command,
-        input=args.send_body,
+        input=body,
         text=True,
         capture_output=True,
         check=False,
@@ -704,6 +976,10 @@ def _send_via_smtp(args: argparse.Namespace, message: EmailMessage) -> None:
 
 
 def _run_send_command(args: argparse.Namespace) -> int:
+    if not args.mail_jwt_secret:
+        print("ERROR - MAIL_CHECK_JWT_SECRET is required for send command.")
+        return 3
+
     message = _build_send_message(args)
     try:
         if args.send_backend == "sendmail":
@@ -727,17 +1003,52 @@ def _run_send_command(args: argparse.Namespace) -> int:
 
 
 def _run_email_check(args: argparse.Namespace) -> Tuple[int, str]:
+    if not args.mail_jwt_secret:
+        return 3, "UNKNOWN - MAIL_CHECK_JWT_SECRET is required for mail validation."
+
     try:
         msg_ids, criteria = find_matching_message_ids(args)
     except Exception as exc:
         return 3, f"UNKNOWN - mailbox poll failed: {exc}"
 
-    if msg_ids:
+    if not msg_ids:
+        return 2, f"CRITICAL - no matching mail found; criteria=[{criteria}]"
+
+    try:
+        valid_ids, metrics = _collect_valid_matches(args, msg_ids)
+    except Exception as exc:
+        return 3, f"UNKNOWN - mailbox validation failed: {exc}"
+
+    if valid_ids:
+        send_to_delivery_text = (
+            f"{metrics['send_to_delivery_seconds']:.3f}"
+            if metrics["send_to_delivery_seconds"] is not None
+            else "n/a"
+        )
+        delivery_to_check_text = (
+            f"{metrics['delivery_to_check_seconds']:.3f}"
+            if metrics["delivery_to_check_seconds"] is not None
+            else "n/a"
+        )
+        end_to_end_text = (
+            f"{metrics['mail_delivery_seconds']:.3f}" if metrics["mail_delivery_seconds"] is not None else "n/a"
+        )
+        perfdata_parts: List[str] = []
+        if metrics["send_to_delivery_seconds"] is not None:
+            perfdata_parts.append(f"send_to_delivery_seconds={metrics['send_to_delivery_seconds']:.3f}s;;;;")
+        if metrics["delivery_to_check_seconds"] is not None:
+            perfdata_parts.append(f"delivery_to_check_seconds={metrics['delivery_to_check_seconds']:.3f}s;;;;")
+        if metrics["mail_delivery_seconds"] is not None:
+            perfdata_parts.append(f"mail_delivery_seconds={metrics['mail_delivery_seconds']:.3f}s;;;;")
+        perfdata = f" | {' '.join(perfdata_parts)}" if perfdata_parts else ""
         return (
             0,
-            f"OK - expected mail found ({len(msg_ids)} match(es)); criteria=[{criteria}]; delete_match={args.delete_match}",
+            f"Mail Check OK: expected mail found ({len(valid_ids)} valid match(es)) - "
+            f"send_to_delivery_seconds={send_to_delivery_text} "
+            f"delivery_to_check_seconds={delivery_to_check_text} "
+            f"mail_delivery_seconds={end_to_end_text}{perfdata}",
         )
-    return 2, f"CRITICAL - no matching mail found; criteria=[{criteria}]"
+    return 2, f"CRITICAL - matching mail found but token check failed; criteria=[{criteria}]"
 
 
 def _run_check_command(args: argparse.Namespace) -> int:

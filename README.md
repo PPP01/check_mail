@@ -113,6 +113,7 @@ Wenn du nicht bei jedem Aufruf manuell Match-Kriterien pflegen willst:
 3. Das Skript erstellt standardmäßig eine `.env` in `./config`, deren Name mit `match_criteria_` beginnt.
 4. `MAIL_SUBJECT_CONTAINS`, `MAIL_FROM_CONTAINS` und (wenn ermittelbar)
    `MAIL_BODY_CONTAINS` werden aus der Vorlage übernommen.
+   `MailCheckJwt` und `MailCheckSentAt` werden dabei ignoriert.
 5. Die erzeugte Datei enthält nur den Block `Match criteria`.
 6. Optional als Standard setzen:
    ```bash
@@ -138,8 +139,14 @@ Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nic
 - Standardmäßig wird auf `UNSEEN` geprüft.
 - `MAIL_SUBJECT_CONTAINS` und optional `MAIL_FROM_CONTAINS` verengen die Suche.
 - `MAIL_BODY_CONTAINS` sucht zusätzlich im Mail-Inhalt (Body).
+- `MAIL_CHECK_JWT_SECRET` wird zur JWT-Prüfung beim Empfang genutzt.
+- `MAIL_CHECK_JWT_MAX_AGE_SECONDS` begrenzt die maximale Token-Alterung.
 - `MAIL_INCLUDE_SEEN=1` berücksichtigt auch bereits gelesene Mails, mit `0` nur `UNSEEN`.
 - Mit `MAIL_DELETE_MATCH=1` werden Treffer nach dem Check gelöscht.
+- Bei gültigem Treffer werden Laufzeitmetriken berechnet:
+  `send_to_delivery_seconds` (Versand bis Zustellung),
+  `delivery_to_check_seconds` (Zustellung bis Check) und
+  `mail_delivery_seconds` (End-to-End: Versand bis Check).
 
 ## Icinga-Konfiguration
 
@@ -158,6 +165,14 @@ Der Command `send` prüft den realen Versandweg einer Anwendung. Unterstützte W
 - `mail` (z. B. `/usr/bin/mail` aus CLI)
 - `smtp` (direkter SMTP-Versand)
 
+Beim Versand werden zusätzlich in jede Testmail eingebaut:
+
+- `MailCheckJwt: <JWT-HS256>`
+- `MailCheckSentAt: <UTC-Zeitstempel>`
+
+Beim Empfang (`check`/`email`) wird das JWT validiert und aus dem Zeitstempel
+die Versanddauer berechnet.
+
 Pflicht-/Basiswerte:
 
 - `MAIL_SEND_BACKEND=sendmail|mail|smtp`
@@ -165,6 +180,8 @@ Pflicht-/Basiswerte:
 - `MAIL_SEND_FROM=<absenderadresse>`
 - `MAIL_SEND_SUBJECT=<betreff>`
 - `MAIL_SEND_BODY=<inhalt>`
+- `MAIL_CHECK_JWT_SECRET=<jwt-secret>`
+- `MAIL_CHECK_JWT_MAX_AGE_SECONDS=<max-alter>`
 
 Backend-spezifisch:
 
