@@ -28,6 +28,34 @@ def _resolve_env_path(value: str) -> Path:
     return (PROJECT_ROOT / raw_path).resolve()
 
 
+def _env_bool(primary_key: str, fallback_key: str, default: str = "0") -> bool:
+    value = os.getenv(primary_key)
+    if value is None:
+        value = os.getenv(fallback_key, default)
+    return value == "1"
+
+
+def _read_env_key(path: Path, key: str) -> str:
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                name, value = line.split("=", 1)
+                if name.strip() != key:
+                    continue
+                cleaned = value.strip()
+                if (cleaned.startswith("'") and cleaned.endswith("'")) or (
+                    cleaned.startswith('"') and cleaned.endswith('"')
+                ):
+                    cleaned = cleaned[1:-1]
+                return cleaned.strip()
+    except OSError as exc:
+        raise RuntimeError(f"Could not read env file {path}: {exc}") from exc
+    return ""
+
+
 def load_runtime_env(config_override: str = "") -> None:
     load_dotenv(dotenv_path=DEFAULT_ENV_PATH, override=False)
 
@@ -37,6 +65,11 @@ def load_runtime_env(config_override: str = "") -> None:
         if not selected_path.exists():
             raise RuntimeError(
                 f"Configured env file not found: {selected_config} (resolved: {selected_path})"
+            )
+        selected_active_profile = _read_env_key(selected_path, "MAIL_ACTIVE_CONFIG")
+        if not selected_active_profile:
+            raise RuntimeError(
+                f"Configured env file must define non-empty MAIL_ACTIVE_CONFIG: {selected_path}"
             )
         load_dotenv(dotenv_path=selected_path, override=True)
 
@@ -84,8 +117,12 @@ def _add_icinga_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--icinga-host", default=os.getenv("ICINGA_HOST"))
     parser.add_argument("--icinga-service", default=os.getenv("ICINGA_SERVICE"))
     parser.add_argument("--icinga-verify-tls", action="store_true", default=os.getenv("ICINGA_VERIFY_TLS", "1") == "1")
-    parser.add_argument("--debug-icinga", action="store_true", default=os.getenv("MAIL_DEBUG_ICINGA", "0") == "1")
-    parser.add_argument("--icinga-dry-run", action="store_true", default=os.getenv("MAIL_ICINGA_DRY_RUN", "0") == "1")
+    parser.add_argument("--debug-icinga", action="store_true", default=_env_bool("ICINGA_DEBUG", "MAIL_DEBUG_ICINGA"))
+    parser.add_argument(
+        "--icinga-dry-run",
+        action="store_true",
+        default=_env_bool("ICINGA_DRY_RUN", "MAIL_ICINGA_DRY_RUN"),
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -617,6 +654,16 @@ def _run_icinga_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ensure_active_profile_required(args: argparse.Namespace) -> int:
+    if args.command == "template-config":
+        return 0
+    active_profile = os.getenv("MAIL_ACTIVE_CONFIG", "").strip()
+    if active_profile:
+        return 0
+    print("ERROR - MAIL_ACTIVE_CONFIG is required in settings config or via --config.")
+    return 3
+
+
 def main() -> int:
     bootstrap = argparse.ArgumentParser(add_help=False)
     bootstrap.add_argument("--config", "-c", default="")
@@ -636,6 +683,10 @@ def main() -> int:
     if not args.command:
         parser.print_help()
         return 0
+
+    profile_check_code = _ensure_active_profile_required(args)
+    if profile_check_code != 0:
+        return profile_check_code
 
     if args.command == "check":
         return _run_check_command(args)

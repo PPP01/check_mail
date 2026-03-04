@@ -34,8 +34,8 @@ deactivate
    ```
 2. Werte in `config/settings.env` eintragen.
 3. Die Datei wird beim Skriptstart automatisch via dotenv geladen.
-4. `config/settings.env` ist die Standard-Konfiguration und enthält `MAIL_ACTIVE_CONFIG`.
-5. Optional kannst du ein Standard-Match-Criteria-Profil setzen:
+4. `config/settings.env` ist die Standard-Konfiguration.
+5. `MAIL_ACTIVE_CONFIG` ist Pflicht und muss auf eine Match-Criteria-Datei zeigen:
    ```bash
    MAIL_ACTIVE_CONFIG=config/match_criteria_<profil>.env
    ```
@@ -85,7 +85,7 @@ Cron-Zeile mit aktuellen Pfaden automatisch ausgeben:
 Hinweis:
 - `set -a` und `source config/settings.env` sind nicht mehr nötig, da das Skript die Datei per dotenv selbst lädt.
 - Mit `--config`/`-c` lädst du eine alternative vollständige Settings-Datei (wie `settings.env.example` aufgebaut).
-- Mit `MAIL_ACTIVE_CONFIG` in `config/settings.env` definierst du ein Standard-Match-Criteria-Profil.
+- `MAIL_ACTIVE_CONFIG` in `config/settings.env` ist Pflicht.
 - Der Aufruf über die venv-Python stellt sicher, dass `python-dotenv` in Cron auch wirklich verfügbar ist.
 
 ## Profil aus Vorlage erzeugen
@@ -129,6 +129,7 @@ Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nic
 - Bei Header-Vorlage werden `From`/`To`/`Return-Path` automatisch auf die reine
   E-Mail-Adresse normalisiert, damit IMAP-SEARCH keine `BAD`-Fehler wegen
   Leerzeichen erzeugt.
+- `MAIL_INCLUDE_SEEN=1` berücksichtigt auch bereits gelesene Mails, mit `0` nur `UNSEEN`.
 - Mit `MAIL_DELETE_MATCH=1` werden Treffer nach dem Check gelöscht.
 
 ## Icinga-Konfiguration
@@ -136,9 +137,9 @@ Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nic
 - Für `check` und `icinga` sind `ICINGA_URL`, `ICINGA_USER`,
   `ICINGA_PASSWORD`, `ICINGA_HOST`, `ICINGA_SERVICE` Pflicht.
 - Für Debug-Ausgabe des kompletten API-Calls:
-  `MAIL_DEBUG_ICINGA=1`
+  `ICINGA_DEBUG=1`
 - Für reinen Test ohne echten Submit:
-  `MAIL_ICINGA_DRY_RUN=1` (nur zusammen mit Debug sinnvoll).
+  `ICINGA_DRY_RUN=1` (nur zusammen mit Debug sinnvoll).
 
 ## Einbindung in Icinga2
 
@@ -214,7 +215,7 @@ Wenn der Exit-Code anderweitig verarbeitet wird:
 
 - Das Skript gibt bei erfolgreichem Submit jetzt zusätzlich aus:
   `Icinga submit OK - ...`
-- Mit `MAIL_DEBUG_ICINGA=1` wird ausgegeben:
+- Mit `ICINGA_DEBUG=1` wird ausgegeben:
   Endpoint, JSON-Payload und ein vollständiger `curl`-Befehl zum Nachtesten.
 - Wenn HTTP zwar klappt, aber kein Objekt getroffen wird, kommt jetzt ein
   Fehler (`UNKNOWN - Icinga submit failed: ... no results ...`).
