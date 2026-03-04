@@ -13,6 +13,7 @@ import ssl
 import smtplib
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 import unicodedata
@@ -1017,6 +1018,7 @@ def _run_send_command(args: argparse.Namespace) -> int:
         return 3
 
     message = _build_send_message(args)
+    started = time.perf_counter()
     try:
         if args.send_backend == "sendmail":
             _send_via_sendmail(args, message)
@@ -1031,9 +1033,12 @@ def _run_send_command(args: argparse.Namespace) -> int:
         print(f"ERROR - send failed: {exc}")
         return 3
 
+    send_seconds = max(0.0, time.perf_counter() - started)
+    message_size = len(message.as_bytes())
     print(
         f"OK - send command delivered test mail via backend={args.send_backend}; "
-        f"to={args.send_to}; subject={args.send_subject!r}"
+        f"to={args.send_to}; subject={args.send_subject!r} "
+        f"| send_command_seconds={send_seconds:.3f}s;;;; send_message_bytes={message_size}B;;;;"
     )
     return 0
 

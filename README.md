@@ -184,6 +184,11 @@ Beim Versand werden zusätzlich in jede Testmail eingebaut:
 Beim Empfang (`check`/`email`) wird das JWT validiert und aus dem Zeitstempel
 die Versanddauer berechnet.
 
+Der `send`-Output enthält für Icinga zusätzlich Perfdata:
+
+- `send_command_seconds`
+- `send_message_bytes`
+
 Pflicht-/Basiswerte:
 
 - `MAIL_CHECK_JWT_SECRET=<jwt-secret>`
