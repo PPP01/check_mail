@@ -1,38 +1,32 @@
-# Icinga2 Integration (Active Checks für Mail-Versand und Mail-Empfang)
+# Icinga2 Integration (Mail Heartbeat Check)
 
-Diese Anleitung beschreibt ausschließlich die Nutzung dieses Projekts mit Icinga2.
+Diese Anleitung beschreibt ausschließlich die Nutzung von `mail_check.py` mit Icinga2.
 
 ## 1. Grundlagen
 
-Das Skript `mail_check.py` unterstützt für Icinga zwei zentrale Active-Check-Use-Cases:
+`mail_check.py` deckt zwei Active-Check-Use-Cases ab:
 
-- `send`: triggert aktiv den Testversand einer Mail (Versandprüfung)
-- `check --no-icinga-submit`: prüft den Mail-Empfang inklusive JWT-Validierung (Empfangsprüfung)
+- `send`: aktiver Testversand einer Mail (Versandpfad)
+- `check`: aktiver Empfangs-Check (Mailbox + JWT-Validierung)
 
-Beide Commands liefern Plugin-Output und passende Exit-Codes (`0`, `2`, `3`) direkt für Icinga.
+Wichtige Betriebsarten für `check`:
 
-Hinweis:
-- `check` ohne `--no-icinga-submit` nutzt zusätzlich den passiven API-Submit nach Icinga.
-- Für reine Active-Check-Services in Icinga wird `check --no-icinga-submit` empfohlen.
-- Alternativ kann das global über `ICINGA_PASSIVE_CHECK=0` gesteuert werden.
+- `check --no-icinga-submit`: nur lokaler Plugin-Output (typischer Active Check)
+- `check` mit `ICINGA_PASSIVE_CHECK=1`: zusätzlicher passiver Submit zur Icinga-API
+- `check` mit `ICINGA_PASSIVE_CHECK=0`: kein passiver Submit
 
 ## 2. Empfehlung: mindestens 2 Icinga-Instanzen
 
-Empfohlen ist der Betrieb mit mindestens zwei getrennten Icinga-Instanzen:
+Empfohlen sind mindestens zwei getrennte Instanzen:
 
-1. Versand-Instanz
-2. Empfangs-Instanz
+1. Instanz A für `send` (Versand)
+2. Instanz B für `check` (Empfang)
 
-Warum diese Trennung sinnvoll ist:
+Vorteile:
 
-- bessere Fehlerlokalisierung (Versandpfad vs. Empfangspfad)
-- geringere Blind Spots bei Störungen einer einzelnen Instanz
-- klarere Verantwortlichkeit je Monitoring-Pfad
-
-Typisches Muster:
-
-- Instanz A führt den Service für `send` aus.
-- Instanz B führt den Service für `check --no-icinga-submit` aus.
+- klare Trennung von Versand- und Empfangsfehlern
+- weniger Blind Spots bei Ausfall einer Instanz
+- bessere Nachvollziehbarkeit im Incident-Fall
 
 ## 3. Installation
 
@@ -62,68 +56,88 @@ cp config/settings.env.example config/settings.env
 
 ### 4.1 Gemeinsame Basis
 
-In `config/settings.env` müssen mindestens diese Werte gepflegt werden:
+Für beide Pfade (`send` und `check`) ist relevant:
+
+- `MAIL_CHECK_JWT_SECRET`
+- optional `MAIL_CHECK_JWT_MAX_AGE_SECONDS`
+
+Nur für Empfang (`check`/`email`) zusätzlich erforderlich:
 
 - `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_MAILBOX`
-- `MAIL_CHECK_JWT_SECRET`
-- `MAIL_CHECK_JWT_MAX_AGE_SECONDS`
 - `MAIL_ACTIVE_CONFIG` (z. B. `config/match_criteria_icingamail_send_test.env`)
+- Match-Criteria-Datei mit `MAIL_SUBJECT_CONTAINS`, `MAIL_FROM_CONTAINS`, optional `MAIL_BODY_CONTAINS`
 
-Zusätzlich wird eine Match-Criteria-Datei benötigt, z. B.:
-
-`config/match_criteria_icingamail_send_test.env`
-
-mit:
-
-- `MAIL_SUBJECT_CONTAINS`
-- `MAIL_FROM_CONTAINS`
-- optional `MAIL_BODY_CONTAINS`
+Hinweis: `send` benötigt **kein** `MAIL_ACTIVE_CONFIG`.
 
 ### 4.2 Versand-Konfiguration (`send`)
 
-Für den Versandservice in Icinga:
+Optionale Send-Werte (mit Defaults/Fallbacks):
 
-- `MAIL_SEND_BACKEND=sendmail|mail|smtp` (optional, Default `sendmail`)
-- `MAIL_SEND_TO` (optional, Fallback: `IMAP_USER`, wenn E-Mail)
-- `MAIL_SEND_FROM` (optional, Fallback: `MAIL_FROM_CONTAINS`, sonst `MAIL_SEND_TO`)
-- `MAIL_SEND_SUBJECT` (optional)
-- `MAIL_SEND_BODY` (optional)
+- `MAIL_SEND_BACKEND=sendmail|mail|smtp` (Default: `sendmail`)
+- `MAIL_SEND_TO` (Fallback: `IMAP_USER`, wenn E-Mail-Adresse)
+- `MAIL_SEND_FROM` (Fallback: `MAIL_FROM_CONTAINS`, sonst `MAIL_SEND_TO`)
+- `MAIL_SEND_SUBJECT` (Default: `IcingaMail: Send test`)
+- `MAIL_SEND_BODY` (Default: `IcingaMail Send test`)
 
-Je nach Backend zusätzlich:
+Backend-spezifisch:
 
-- `MAIL_SEND_SENDMAIL_COMMAND` oder
-- `MAIL_SEND_MAIL_COMMAND` oder
-- `MAIL_SEND_SMTP_*`
+- `sendmail`: `MAIL_SEND_SENDMAIL_COMMAND` (Default: `/usr/sbin/sendmail -t -i`)
+- `mail`: `MAIL_SEND_MAIL_COMMAND` (Default: `/usr/bin/mail`)
+- `smtp`: `MAIL_SEND_SMTP_HOST` (Pflicht), plus `MAIL_SEND_SMTP_*`
 
-Test lokal:
+Wichtig bei `sendmail`:
+
+- Envelope-From wird aus `MAIL_SEND_FROM` per `-f` gesetzt.
+- Wenn Postfix-Absenderrechte eingeschränkt sind, muss der Absender serverseitig erlaubt sein.
+
+`send` liefert Perfdata für Icinga:
+
+- `send_command_seconds`
+- `send_message_bytes`
+
+Lokaler Test:
 
 ```bash
 ./mail_check.py send
 ```
 
-### 4.3 Empfang-Konfiguration (`check --no-icinga-submit`)
+### 4.3 Empfang-Konfiguration (`check`)
 
-Für den Empfangsservice in Icinga sind die IMAP- und Match-Criteria-Werte entscheidend.
-Wenn du den passiven API-Submit global deaktivieren willst, setze:
-
-`ICINGA_PASSIVE_CHECK=0`
-
-Dann reicht auch der Aufruf `check` ohne zusätzliches `--no-icinga-submit`.
-
-Test lokal:
+Für reine Active Checks empfohlen:
 
 ```bash
 ./mail_check.py check --no-icinga-submit
 ```
 
-Optional:
+Alternativ global über Setting:
 
-- `MAIL_INCLUDE_SEEN=1`, wenn auch gelesene Mails berücksichtigt werden sollen
-- `MAIL_DELETE_MATCH=1`, wenn Treffer nach erfolgreichem Check gelöscht werden sollen
+```bash
+ICINGA_PASSIVE_CHECK=0
+```
+
+Dann reicht:
+
+```bash
+./mail_check.py check
+```
+
+Optionale Empfangssteuerung:
+
+- `MAIL_INCLUDE_SEEN=1`
+- `MAIL_DELETE_MATCH=1`
+
+### 4.4 Passive API-Konfiguration (nur wenn benötigt)
+
+Nur nötig, wenn `check` zusätzlich passiv submitten soll:
+
+- `ICINGA_URL`
+- `ICINGA_USER`
+- `ICINGA_PASSWORD`
+- `ICINGA_HOST`
+- `ICINGA_SERVICE`
+- optional `ICINGA_VERIFY_TLS`, `ICINGA_DEBUG`, `ICINGA_DRY_RUN`
 
 ## 5. Einrichtung in Icinga2
-
-Die folgenden Beispiele zeigen die Einbindung als Active Checks über `CheckCommand`, `Host` und `Service`.
 
 ### 5.1 CheckCommand-Objekte
 
@@ -173,15 +187,15 @@ object Service "mail-heartbeat-receive" {
 }
 ```
 
-### 5.4 Icinga-Konfiguration prüfen und neu laden
+### 5.4 Konfiguration prüfen und neu laden
 
 ```bash
 sudo icinga2 daemon -C
 sudo systemctl reload icinga2
 ```
 
-## 6. Exit-Codes für Icinga
+## 6. Exit-Codes
 
 - `0`: OK
-- `2`: CRITICAL (z. B. keine passende Mail gefunden)
-- `3`: UNKNOWN (technischer Fehler)
+- `2`: CRITICAL
+- `3`: UNKNOWN
