@@ -100,12 +100,7 @@ def _add_mail_args(parser: argparse.ArgumentParser) -> None:
 
     parser.add_argument("--subject-contains", default=os.getenv("MAIL_SUBJECT_CONTAINS", ""))
     parser.add_argument("--from-contains", default=os.getenv("MAIL_FROM_CONTAINS", ""))
-    parser.add_argument("--header-template-file", default=os.getenv("MAIL_HEADER_TEMPLATE_FILE", ""))
-    parser.add_argument(
-        "--template-headers",
-        default=os.getenv("MAIL_TEMPLATE_HEADERS", "Subject,From,To,Return-Path,X-KasLoop"),
-        help="Comma-separated header names to load from --header-template-file",
-    )
+    parser.add_argument("--body-contains", default=os.getenv("MAIL_BODY_CONTAINS", ""))
     parser.add_argument("--include-seen", action="store_true", default=os.getenv("MAIL_INCLUDE_SEEN", "0") == "1")
     parser.add_argument("--delete-match", action="store_true", default=os.getenv("MAIL_DELETE_MATCH", "0") == "1")
 
@@ -165,14 +160,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     template_parser = subparsers.add_parser(
         "template-config",
-        help="Create match-criteria config from a mail header template.",
+        help="Create match-criteria config from a mail source template.",
     )
     template_parser.add_argument(
         "--template-file",
         "-f",
-        default=os.getenv("MAIL_HEADER_TEMPLATE_FILE", ""),
-        required=not os.getenv("MAIL_HEADER_TEMPLATE_FILE"),
-        help="Path to template header file.",
+        required=True,
+        help="Path to template file (full mail source recommended).",
     )
     template_parser.add_argument(
         "--output",
@@ -205,15 +199,28 @@ def _decode_header_val(value: str) -> str:
     return value.encode("ascii", errors="ignore").decode("ascii")
 
 
-def _parse_raw_headers(path: str) -> Dict[str, str]:
+def _parse_template_sections(path: str) -> Tuple[Dict[str, str], List[str]]:
     headers: Dict[str, str] = {}
+    body_lines: List[str] = []
     current_name = ""
     current_value_parts: List[str] = []
+    in_header_block = True
+    saw_header = False
 
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         for raw_line in f:
             line = raw_line.rstrip("\r\n")
-            if not line:
+            if in_header_block and not line:
+                if current_name:
+                    headers[current_name] = " ".join(current_value_parts).strip()
+                    current_name = ""
+                    current_value_parts = []
+                if saw_header:
+                    in_header_block = False
+                continue
+
+            if not in_header_block:
+                body_lines.append(line)
                 continue
 
             if line[0] in (" ", "\t") and current_name:
@@ -229,11 +236,12 @@ def _parse_raw_headers(path: str) -> Dict[str, str]:
             name, value = line.split(":", 1)
             current_name = name.strip()
             current_value_parts = [value.strip()]
+            saw_header = True
 
     if current_name:
         headers[current_name] = " ".join(current_value_parts).strip()
 
-    return headers
+    return headers, body_lines
 
 
 def _extract_email(value: str) -> str:
@@ -248,37 +256,21 @@ def _extract_email(value: str) -> str:
     return value.strip()
 
 
-def _normalize_header_value(header_name: str, value: str) -> str:
-    name = header_name.lower()
-    if name in {"from", "to", "return-path", "reply-to", "sender"}:
-        return _extract_email(value)
-    return value.strip()
-
-
-def _collect_template_header_filters(args: argparse.Namespace) -> List[Tuple[str, str]]:
-    if not args.header_template_file:
-        return []
-
-    raw_headers = _parse_raw_headers(args.header_template_file)
-    wanted = [h.strip() for h in args.template_headers.split(",") if h.strip()]
-    lower_map = {k.lower(): k for k in raw_headers.keys()}
-
-    selected: List[Tuple[str, str]] = []
-    for header_name in wanted:
-        raw_key = lower_map.get(header_name.lower())
-        if not raw_key:
-            continue
-        value = _normalize_header_value(raw_key, raw_headers[raw_key])
-        if value:
-            selected.append((raw_key, value))
-
-    return selected
-
-
 def _get_header_case_insensitive(headers: Dict[str, str], header_name: str) -> str:
     for key, value in headers.items():
         if key.lower() == header_name.lower():
             return value
+    return ""
+
+
+def _extract_body_contains(body_lines: List[str]) -> str:
+    for raw_line in body_lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("--"):
+            continue
+        return line
     return ""
 
 
@@ -309,10 +301,7 @@ def _write_match_criteria_env_file(path: Path, values: Dict[str, str]) -> None:
         "# Match criteria",
         f"MAIL_SUBJECT_CONTAINS={_format_env_value(values['MAIL_SUBJECT_CONTAINS'])}",
         f"MAIL_FROM_CONTAINS={_format_env_value(values['MAIL_FROM_CONTAINS'])}",
-        "MAIL_HEADER_TEMPLATE_FILE=",
-        f"MAIL_TEMPLATE_HEADERS={_format_env_value(values['MAIL_TEMPLATE_HEADERS'])}",
-        f"MAIL_INCLUDE_SEEN={_format_env_value(values['MAIL_INCLUDE_SEEN'])}",
-        f"MAIL_DELETE_MATCH={_format_env_value(values['MAIL_DELETE_MATCH'])}",
+        f"MAIL_BODY_CONTAINS={_format_env_value(values['MAIL_BODY_CONTAINS'])}",
         "",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -365,19 +354,18 @@ def _path_for_env_reference(path: Path) -> str:
     return relative
 
 
-def _build_match_criteria_values(raw_headers: Dict[str, str]) -> Dict[str, str]:
+def _build_match_criteria_values(raw_headers: Dict[str, str], body_lines: List[str]) -> Dict[str, str]:
     subject = _get_header_case_insensitive(raw_headers, "Subject").strip()
     from_header = _get_header_case_insensitive(raw_headers, "From").strip()
     from_contains = _extract_email(from_header) if from_header else ""
+    body_contains = _extract_body_contains(body_lines)
     if not subject:
         raise RuntimeError("template file has no Subject header.")
 
     return {
         "MAIL_SUBJECT_CONTAINS": subject,
         "MAIL_FROM_CONTAINS": from_contains,
-        "MAIL_TEMPLATE_HEADERS": os.getenv("MAIL_TEMPLATE_HEADERS", "Subject,From,To,Return-Path,X-KasLoop"),
-        "MAIL_INCLUDE_SEEN": os.getenv("MAIL_INCLUDE_SEEN", "0"),
-        "MAIL_DELETE_MATCH": os.getenv("MAIL_DELETE_MATCH", "0"),
+        "MAIL_BODY_CONTAINS": body_contains,
     }
 
 
@@ -412,9 +400,9 @@ def _run_template_config_command(args: argparse.Namespace) -> int:
         print(f"ERROR - template file not found: {args.template_file} (resolved: {template_path})")
         return 3
 
-    raw_headers = _parse_raw_headers(str(template_path))
+    raw_headers, body_lines = _parse_template_sections(str(template_path))
     try:
-        criteria_values = _build_match_criteria_values(raw_headers)
+        criteria_values = _build_match_criteria_values(raw_headers, body_lines)
     except RuntimeError as exc:
         print(f"ERROR - {exc}")
         return 3
@@ -437,6 +425,8 @@ def _run_template_config_command(args: argparse.Namespace) -> int:
     print(f"Template subject -> MAIL_SUBJECT_CONTAINS: {criteria_values['MAIL_SUBJECT_CONTAINS']}")
     if criteria_values["MAIL_FROM_CONTAINS"]:
         print(f"Template from -> MAIL_FROM_CONTAINS: {criteria_values['MAIL_FROM_CONTAINS']}")
+    if criteria_values["MAIL_BODY_CONTAINS"]:
+        print(f"Template body -> MAIL_BODY_CONTAINS: {criteria_values['MAIL_BODY_CONTAINS']}")
 
     if args.new_config:
         new_config_candidate = _ensure_env_suffix(args.new_config.strip())
@@ -475,8 +465,8 @@ def find_matching_message_ids(args: argparse.Namespace) -> Tuple[List[bytes], st
             criteria.extend(["HEADER", "Subject", _decode_header_val(args.subject_contains)])
         if args.from_contains:
             criteria.extend(["HEADER", "From", _decode_header_val(args.from_contains)])
-        for header_name, header_value in _collect_template_header_filters(args):
-            criteria.extend(["HEADER", header_name, _decode_header_val(header_value)])
+        if args.body_contains:
+            criteria.extend(["BODY", _decode_header_val(args.body_contains)])
         if not criteria:
             criteria = ["ALL"]
 

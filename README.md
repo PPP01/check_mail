@@ -60,14 +60,14 @@ source .venv/bin/activate
 # lädt eine alternative vollständige Config (wie settings.env.example aufgebaut)
 ./scripts/check_mail_and_notify_icinga.py -c config/mailbox_settings.env check
 
-# erstellt aus einer Header-Vorlage eine Match-Criteria-Config
-./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt
+# erstellt aus einer Mail-Quelltext-Vorlage eine Match-Criteria-Config
+./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt
 
 # setzt die erzeugte Match-Criteria-Config direkt als Standard in settings.env
-./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt -d
+./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt -d
 
 # erstellt zusätzlich eine neue vollständige Config aus settings.env.example
-./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt --new-config mailbox_settings.env
+./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt --new-config mailbox_settings.env
 ```
 
 ## Alle 5 Minuten per Cron
@@ -90,30 +90,33 @@ Hinweis:
 
 ## Profil aus Vorlage erzeugen
 
-Wenn du nicht bei jedem Aufruf mit einer Header-Vorlage arbeiten willst:
+Wenn du nicht bei jedem Aufruf manuell Match-Kriterien pflegen willst:
 
-1. Vorlage einlesen und Match-Criteria-Profil erzeugen:
+1. Lege in `vorlagen/` eine Datei mit dem vollständigen Mail-Quelltext an
+   (Header + Body, nicht nur Header).
+2. Vorlage einlesen und Match-Criteria-Profil erzeugen:
    ```bash
-   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt
+   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt
    ```
-2. Das Skript erstellt standardmäßig eine `.env` in `./config`, deren Name mit `match_criteria_` beginnt.
-3. `MAIL_SUBJECT_CONTAINS` und `MAIL_FROM_CONTAINS` werden aus der Vorlage übernommen.
-4. Die erzeugte Datei enthält nur den Block `Match criteria`.
-5. Optional als Standard setzen:
+3. Das Skript erstellt standardmäßig eine `.env` in `./config`, deren Name mit `match_criteria_` beginnt.
+4. `MAIL_SUBJECT_CONTAINS`, `MAIL_FROM_CONTAINS` und (wenn ermittelbar)
+   `MAIL_BODY_CONTAINS` werden aus der Vorlage übernommen.
+5. Die erzeugte Datei enthält nur den Block `Match criteria`.
+6. Optional als Standard setzen:
    ```bash
-   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt -d
+   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt -d
    ```
-6. Optional neue vollständige Settings-Datei aus dem Example erzeugen:
+7. Optional neue vollständige Settings-Datei aus dem Example erzeugen:
    ```bash
-   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt --new-config mailbox_settings.env
+   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt --new-config mailbox_settings.env
    ```
-7. Optional eigenen Ausgabepfad für die Match-Criteria-Datei setzen:
+8. Optional eigenen Ausgabepfad für die Match-Criteria-Datei setzen:
    ```bash
-   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt -o config/match_criteria_custom.env
+   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt -o config/match_criteria_custom.env
    ```
-8. Existierende Match-Criteria-Datei gezielt überschreiben:
+9. Existierende Match-Criteria-Datei gezielt überschreiben:
    ```bash
-   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt -o config/match_criteria_custom.env --force
+   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt -o config/match_criteria_custom.env --force
    ```
 
 Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nicht als Ausgabeziel überschrieben.
@@ -122,13 +125,7 @@ Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nic
 
 - Standardmäßig wird auf `UNSEEN` geprüft.
 - `MAIL_SUBJECT_CONTAINS` und optional `MAIL_FROM_CONTAINS` verengen die Suche.
-- Optional kann ein kompletter Header als Vorlage genutzt werden:
-  `MAIL_HEADER_TEMPLATE_FILE=/.../vorlagen/mail_header.txt`.
-- Welche Header daraus in die Suche einfließen, steuerst du mit
-  `MAIL_TEMPLATE_HEADERS` (CSV), z. B. `Subject,From,To,Return-Path,X-KasLoop`.
-- Bei Header-Vorlage werden `From`/`To`/`Return-Path` automatisch auf die reine
-  E-Mail-Adresse normalisiert, damit IMAP-SEARCH keine `BAD`-Fehler wegen
-  Leerzeichen erzeugt.
+- `MAIL_BODY_CONTAINS` sucht zusätzlich im Mail-Inhalt (Body).
 - `MAIL_INCLUDE_SEEN=1` berücksichtigt auch bereits gelesene Mails, mit `0` nur `UNSEEN`.
 - Mit `MAIL_DELETE_MATCH=1` werden Treffer nach dem Check gelöscht.
 
