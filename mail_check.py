@@ -154,8 +154,8 @@ def _add_send_args(parser: argparse.ArgumentParser) -> None:
         choices=["sendmail", "mail", "smtp"],
         help="Mail send backend.",
     )
-    parser.add_argument("--send-to", default=os.getenv("MAIL_SEND_TO"), required=not os.getenv("MAIL_SEND_TO"))
-    parser.add_argument("--send-from", default=os.getenv("MAIL_SEND_FROM"), required=not os.getenv("MAIL_SEND_FROM"))
+    parser.add_argument("--send-to", default=os.getenv("MAIL_SEND_TO", ""))
+    parser.add_argument("--send-from", default=os.getenv("MAIL_SEND_FROM", ""))
     parser.add_argument("--mail-jwt-secret", default=os.getenv("MAIL_CHECK_JWT_SECRET", ""))
     parser.add_argument(
         "--mail-jwt-max-age-seconds",
@@ -996,6 +996,24 @@ def _send_via_smtp(args: argparse.Namespace, message: EmailMessage) -> None:
 def _run_send_command(args: argparse.Namespace) -> int:
     if not args.mail_jwt_secret:
         print("ERROR - MAIL_CHECK_JWT_SECRET is required for send command.")
+        return 3
+
+    if not args.send_to:
+        imap_user = os.getenv("IMAP_USER", "").strip()
+        if "@" in imap_user:
+            args.send_to = imap_user
+    if not args.send_from:
+        match_from = os.getenv("MAIL_FROM_CONTAINS", "").strip()
+        if "@" in match_from:
+            args.send_from = match_from
+        elif args.send_to:
+            args.send_from = args.send_to
+
+    if not args.send_to or not args.send_from:
+        print(
+            "ERROR - send requires sender/recipient. Set MAIL_SEND_TO and MAIL_SEND_FROM "
+            "or pass --send-to/--send-from."
+        )
         return 3
 
     message = _build_send_message(args)

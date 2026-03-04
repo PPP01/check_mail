@@ -83,11 +83,11 @@ mit:
 
 Für den Versandservice in Icinga:
 
-- `MAIL_SEND_BACKEND=sendmail|mail|smtp`
-- `MAIL_SEND_TO`
-- `MAIL_SEND_FROM`
-- `MAIL_SEND_SUBJECT`
-- `MAIL_SEND_BODY`
+- `MAIL_SEND_BACKEND=sendmail|mail|smtp` (optional, Default `sendmail`)
+- `MAIL_SEND_TO` (optional, Fallback: `IMAP_USER`, wenn E-Mail)
+- `MAIL_SEND_FROM` (optional, Fallback: `MAIL_FROM_CONTAINS`, sonst `MAIL_SEND_TO`)
+- `MAIL_SEND_SUBJECT` (optional)
+- `MAIL_SEND_BODY` (optional)
 
 Je nach Backend zusätzlich:
 

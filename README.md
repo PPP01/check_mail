@@ -186,13 +186,16 @@ die Versanddauer berechnet.
 
 Pflicht-/Basiswerte:
 
-- `MAIL_SEND_BACKEND=sendmail|mail|smtp`
-- `MAIL_SEND_TO=<zieladresse>`
-- `MAIL_SEND_FROM=<absenderadresse>`
-- `MAIL_SEND_SUBJECT=<betreff>`
-- `MAIL_SEND_BODY=<inhalt>`
 - `MAIL_CHECK_JWT_SECRET=<jwt-secret>`
 - `MAIL_CHECK_JWT_MAX_AGE_SECONDS=<max-alter>`
+
+Optionale Send-Werte (mit Defaults/Fallbacks):
+
+- `MAIL_SEND_BACKEND=sendmail|mail|smtp` (Default: `sendmail`)
+- `MAIL_SEND_TO=<zieladresse>` (falls leer: Fallback auf `IMAP_USER`, wenn E-Mail)
+- `MAIL_SEND_FROM=<absenderadresse>` (falls leer: Fallback auf `MAIL_FROM_CONTAINS`, sonst `MAIL_SEND_TO`)
+- `MAIL_SEND_SUBJECT=<betreff>` (Default: `IcingaMail: Send test`)
+- `MAIL_SEND_BODY=<inhalt>` (Default: `IcingaMail Send test`)
 
 Backend-spezifisch:
 
