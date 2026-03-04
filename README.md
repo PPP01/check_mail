@@ -1,4 +1,4 @@
-# Mailbox Polling + Icinga2 Passive Check
+# Mail Heartbeat Check + Icinga2 Passive Check
 
 Dieses Projekt enthält ein Skript, das:
 
@@ -10,7 +10,13 @@ Dieses Projekt enthält ein Skript, das:
 
 ## Script
 
-`scripts/check_mail_and_notify_icinga.py`
+`mail_check.py`
+
+## Icinga-spezifische Anleitung
+
+Für die vollständige Einrichtung in Icinga2 (Active Check für `send` und `check`,
+inklusive Beispiel für `CheckCommand`, `Host` und `Service`) siehe
+`README-icinga.md`.
 
 ## Python venv
 
@@ -47,39 +53,42 @@ deactivate
 source .venv/bin/activate
 
 # zeigt nur die Hilfe
-./scripts/check_mail_and_notify_icinga.py
+./mail_check.py
 
-# prüft Mailbox + sendet Ergebnis an Icinga
-./scripts/check_mail_and_notify_icinga.py check
+# prüft Mailbox + sendet Ergebnis an Icinga (passiv)
+./mail_check.py check
+
+# prüft Mailbox nur als Active Check (ohne passives API-Submit)
+./mail_check.py check --no-icinga-submit
 
 # prüft nur Mailbox (kein Icinga-Submit)
-./scripts/check_mail_and_notify_icinga.py email
+./mail_check.py email
 
 # testet nur Icinga-Submit (kein Mailbox-Poll)
-./scripts/check_mail_and_notify_icinga.py icinga
+./mail_check.py icinga
 
 # Standard für icinga-Test: UNKNOWN (exit_status=3),
 # per Parameter überschreibbar, z. B. OK:
-./scripts/check_mail_and_notify_icinga.py icinga --test-exit-status 0 --test-output "OK - manueller Icinga-Test"
+./mail_check.py icinga --test-exit-status 0 --test-output "OK - manueller Icinga-Test"
 
 # lädt eine alternative vollständige Config (wie settings.env.example aufgebaut)
-./scripts/check_mail_and_notify_icinga.py -c config/mailbox_settings.env check
+./mail_check.py -c config/mailbox_settings.env check
 
 # versendet eine Testmail über den konfigurierten Backend-Weg
-./scripts/check_mail_and_notify_icinga.py send
+./mail_check.py send
 
 # Backend explizit überschreiben
-./scripts/check_mail_and_notify_icinga.py send --send-backend mail
-./scripts/check_mail_and_notify_icinga.py send --send-backend smtp
+./mail_check.py send --send-backend mail
+./mail_check.py send --send-backend smtp
 
 # erstellt aus einer Mail-Quelltext-Vorlage eine Match-Criteria-Config
-./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt
+./mail_check.py template-config -f ./vorlagen/kvm-web-guh.txt
 
 # setzt die erzeugte Match-Criteria-Config direkt als Standard in settings.env
-./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt -d
+./mail_check.py template-config -f ./vorlagen/kvm-web-guh.txt -d
 
 # erstellt zusätzlich eine neue vollständige Config aus settings.env.example
-./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt --new-config mailbox_settings.env
+./mail_check.py template-config -f ./vorlagen/kvm-web-guh.txt --new-config mailbox_settings.env
 ```
 
 ## Alle 5 Minuten per Cron
@@ -87,11 +96,11 @@ source .venv/bin/activate
 Cron-Zeile mit aktuellen Pfaden automatisch ausgeben:
 
 ```bash
-.venv/bin/python ./scripts/check_mail_and_notify_icinga.py --print-cron-line
+.venv/bin/python ./mail_check.py --print-cron-line
 ```
 
 ```cron
-*/5 * * * * /path/to/check_emails/.venv/bin/python /path/to/check_emails/scripts/check_mail_and_notify_icinga.py check >> /tmp/mail_check.log 2>&1
+*/5 * * * * /path/to/check_emails/.venv/bin/python /path/to/check_emails/mail_check.py check >> /tmp/mail_check.log 2>&1
 ```
 
 Hinweis:
@@ -108,7 +117,7 @@ Wenn du nicht bei jedem Aufruf manuell Match-Kriterien pflegen willst:
    (Header + Body, nicht nur Header).
 2. Vorlage einlesen und Match-Criteria-Profil erzeugen:
    ```bash
-   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt
+   ./mail_check.py template-config -f ./vorlagen/kvm-web-guh.txt
    ```
 3. Das Skript erstellt standardmäßig eine `.env` in `./config`, deren Name mit `match_criteria_` beginnt.
 4. `MAIL_SUBJECT_CONTAINS`, `MAIL_FROM_CONTAINS` und (wenn ermittelbar)
@@ -117,19 +126,19 @@ Wenn du nicht bei jedem Aufruf manuell Match-Kriterien pflegen willst:
 5. Die erzeugte Datei enthält nur den Block `Match criteria`.
 6. Optional als Standard setzen:
    ```bash
-   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt -d
+   ./mail_check.py template-config -f ./vorlagen/kvm-web-guh.txt -d
    ```
 7. Optional neue vollständige Settings-Datei aus dem Example erzeugen:
    ```bash
-   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt --new-config mailbox_settings.env
+   ./mail_check.py template-config -f ./vorlagen/kvm-web-guh.txt --new-config mailbox_settings.env
    ```
 8. Optional eigenen Ausgabepfad für die Match-Criteria-Datei setzen:
    ```bash
-   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt -o config/match_criteria_custom.env
+   ./mail_check.py template-config -f ./vorlagen/kvm-web-guh.txt -o config/match_criteria_custom.env
    ```
 9. Existierende Match-Criteria-Datei gezielt überschreiben:
    ```bash
-   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt -o config/match_criteria_custom.env --force
+   ./mail_check.py template-config -f ./vorlagen/kvm-web-guh.txt -o config/match_criteria_custom.env --force
    ```
 
 Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nicht als Ausgabeziel überschrieben.
@@ -152,6 +161,8 @@ Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nic
 
 - Für `check` und `icinga` sind `ICINGA_URL`, `ICINGA_USER`,
   `ICINGA_PASSWORD`, `ICINGA_HOST`, `ICINGA_SERVICE` Pflicht.
+- Für `check` kann passiver Submit global per Setting gesteuert werden:
+  `ICINGA_PASSIVE_CHECK=1` (Submit aktiv) oder `0` (kein Submit, nur direkte Ausgabe).
 - Für Debug-Ausgabe des kompletten API-Calls:
   `ICINGA_DEBUG=1`
 - Für reinen Test ohne echten Submit:
@@ -195,13 +206,13 @@ Beispiele:
 
 ```bash
 # sendmail
-./scripts/check_mail_and_notify_icinga.py send --send-backend sendmail
+./mail_check.py send --send-backend sendmail
 
 # mail
-./scripts/check_mail_and_notify_icinga.py send --send-backend mail
+./mail_check.py send --send-backend mail
 
 # smtp
-./scripts/check_mail_and_notify_icinga.py send --send-backend smtp --smtp-host smtp.example.net
+./mail_check.py send --send-backend smtp --smtp-host smtp.example.net
 ```
 
 ## Einbindung in Icinga2
@@ -271,7 +282,7 @@ das Zugriff auf IMAP und die Icinga2-API hat.
 Wenn der Exit-Code anderweitig verarbeitet wird:
 
 ```bash
-./scripts/check_mail_and_notify_icinga.py email
+./mail_check.py email
 ```
 
 ## Troubleshooting Icinga-Submit

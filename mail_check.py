@@ -27,7 +27,7 @@ from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_ENV_PATH = PROJECT_ROOT / "config" / "settings.env"
 DEFAULT_ENV_EXAMPLE_PATH = PROJECT_ROOT / "config" / "settings.env.example"
 
@@ -135,6 +135,12 @@ def _add_icinga_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         default=_env_bool("ICINGA_DRY_RUN", "MAIL_ICINGA_DRY_RUN"),
     )
+    parser.add_argument(
+        "--icinga-passive-check",
+        action="store_true",
+        default=os.getenv("ICINGA_PASSIVE_CHECK", "1") == "1",
+        help="Enable passive Icinga submit for check command (env: ICINGA_PASSIVE_CHECK=0/1).",
+    )
 
 
 def _add_send_args(parser: argparse.ArgumentParser) -> None:
@@ -191,7 +197,7 @@ def _add_send_args(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Mailbox check and optional Icinga2 submit via subcommands. "
+            "Mail heartbeat check with optional Icinga2 passive submit via subcommands. "
             "Run without command to show help."
         )
     )
@@ -205,9 +211,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command")
 
-    check_parser = subparsers.add_parser("check", help="Check mailbox and submit result to Icinga.")
+    check_parser = subparsers.add_parser(
+        "check",
+        help="Run mail heartbeat receive check and optionally submit passive result to Icinga.",
+    )
     _add_mail_args(check_parser)
     _add_icinga_args(check_parser)
+    check_parser.add_argument(
+        "--no-icinga-submit",
+        action="store_true",
+        help="Skip passive Icinga API submit and return only plugin output + exit code.",
+    )
 
     email_parser = subparsers.add_parser("email", help="Check mailbox only, no Icinga submit.")
     _add_mail_args(email_parser)
@@ -1052,12 +1066,16 @@ def _run_email_check(args: argparse.Namespace) -> Tuple[int, str]:
 
 
 def _run_check_command(args: argparse.Namespace) -> int:
+    exit_code, output = _run_email_check(args)
+    if args.no_icinga_submit or not args.icinga_passive_check:
+        print(output)
+        return exit_code
+
     missing = _missing_icinga_args(args)
     if missing:
         print(f"UNKNOWN - Icinga settings missing: {', '.join(missing)}")
         return 3
 
-    exit_code, output = _run_email_check(args)
     try:
         submit_status = submit_passive_result(args, exit_code, output)
         print(f"Icinga submit OK - {submit_status}")
