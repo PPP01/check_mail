@@ -1,6 +1,5 @@
 # Local secrets
-config/mail_check.env
-**/mail_check.env
+config/*.env
 vorlagen/
 
 # Logs

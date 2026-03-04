@@ -30,10 +30,15 @@ deactivate
 
 1. Beispiel kopieren:
    ```bash
-   cp config/mail_check.env.example config/mail_check.env
+   cp config/settings.env.example config/settings.env
    ```
-2. Werte in `config/mail_check.env` eintragen.
+2. Werte in `config/settings.env` eintragen.
 3. Die Datei wird beim Skriptstart automatisch via dotenv geladen.
+4. `config/settings.env` ist die Standard-Konfiguration und enthält `MAIL_ACTIVE_CONFIG`.
+5. Optional kannst du ein Standard-Match-Criteria-Profil setzen:
+   ```bash
+   MAIL_ACTIVE_CONFIG=config/match_criteria_<profil>.env
+   ```
 
 ## Aufruf
 
@@ -51,6 +56,18 @@ source .venv/bin/activate
 
 # testet nur Icinga-Submit (kein Mailbox-Poll)
 ./scripts/check_mail_and_notify_icinga.py icinga
+
+# lädt eine alternative vollständige Config (wie settings.env.example aufgebaut)
+./scripts/check_mail_and_notify_icinga.py -c config/mailbox_settings.env check
+
+# erstellt aus einer Header-Vorlage eine Match-Criteria-Config
+./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt
+
+# setzt die erzeugte Match-Criteria-Config direkt als Standard in settings.env
+./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt -d
+
+# erstellt zusätzlich eine neue vollständige Config aus settings.env.example
+./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt --new-config mailbox_settings.env
 ```
 
 ## Alle 5 Minuten per Cron
@@ -66,8 +83,40 @@ Cron-Zeile mit aktuellen Pfaden automatisch ausgeben:
 ```
 
 Hinweis:
-- `set -a` und `source config/mail_check.env` sind nicht mehr nötig, da das Skript die Datei per dotenv selbst lädt.
+- `set -a` und `source config/settings.env` sind nicht mehr nötig, da das Skript die Datei per dotenv selbst lädt.
+- Mit `--config`/`-c` lädst du eine alternative vollständige Settings-Datei (wie `settings.env.example` aufgebaut).
+- Mit `MAIL_ACTIVE_CONFIG` in `config/settings.env` definierst du ein Standard-Match-Criteria-Profil.
 - Der Aufruf über die venv-Python stellt sicher, dass `python-dotenv` in Cron auch wirklich verfügbar ist.
+
+## Profil aus Vorlage erzeugen
+
+Wenn du nicht bei jedem Aufruf mit einer Header-Vorlage arbeiten willst:
+
+1. Vorlage einlesen und Match-Criteria-Profil erzeugen:
+   ```bash
+   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt
+   ```
+2. Das Skript erstellt standardmäßig eine `.env` in `./config`, deren Name mit `match_criteria_` beginnt.
+3. `MAIL_SUBJECT_CONTAINS` und `MAIL_FROM_CONTAINS` werden aus der Vorlage übernommen.
+4. Die erzeugte Datei enthält nur den Block `Match criteria`.
+5. Optional als Standard setzen:
+   ```bash
+   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt -d
+   ```
+6. Optional neue vollständige Settings-Datei aus dem Example erzeugen:
+   ```bash
+   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt --new-config mailbox_settings.env
+   ```
+7. Optional eigenen Ausgabepfad für die Match-Criteria-Datei setzen:
+   ```bash
+   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt -o config/match_criteria_custom.env
+   ```
+8. Existierende Match-Criteria-Datei gezielt überschreiben:
+   ```bash
+   ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/mail_header.txt -o config/match_criteria_custom.env --force
+   ```
+
+Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nicht als Ausgabeziel überschrieben.
 
 ## Match-Logik
 
@@ -108,7 +157,7 @@ object ApiUser "mail-check-api" {
 }
 ```
 
-Danach in `config/mail_check.env` setzen:
+Danach in `config/settings.env` setzen:
 
 ```bash
 ICINGA_URL=https://<icinga-master>:5665
@@ -138,7 +187,7 @@ object Service "mail-heartbeat" {
 }
 ```
 
-Wichtig: `ICINGA_HOST` und `ICINGA_SERVICE` in deiner `mail_check.env` müssen
+Wichtig: `ICINGA_HOST` und `ICINGA_SERVICE` in deiner `settings.env` müssen
 genau auf diese Objekt-Namen passen.
 
 ### 3. Config prüfen und Icinga2 neu laden
@@ -182,3 +231,6 @@ Wenn der Exit-Code anderweitig verarbeitet wird:
 - `icinga`:
   - `0`: Test-Submit erfolgreich
   - `3`: Technischer Fehler beim Icinga-Submit
+- `template-config`:
+  - `0`: Match-Criteria-Profil (und optional neue Voll-Config) erfolgreich erzeugt
+  - `3`: Technischer Fehler (z. B. Vorlage fehlt, Header fehlt, Ziel existiert, geschützte Datei)

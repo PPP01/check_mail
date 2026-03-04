@@ -9,15 +9,47 @@ import ssl
 import sys
 import urllib.error
 import urllib.request
+import unicodedata
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 from dotenv import load_dotenv
 
 
-def load_runtime_env() -> None:
-    env_path = Path(__file__).resolve().parents[1] / "config" / "mail_check.env"
-    load_dotenv(dotenv_path=env_path, override=False)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_ENV_PATH = PROJECT_ROOT / "config" / "settings.env"
+DEFAULT_ENV_EXAMPLE_PATH = PROJECT_ROOT / "config" / "settings.env.example"
+
+
+def _resolve_env_path(value: str) -> Path:
+    raw_path = Path(value)
+    if raw_path.is_absolute():
+        return raw_path
+    return (PROJECT_ROOT / raw_path).resolve()
+
+
+def load_runtime_env(config_override: str = "") -> None:
+    load_dotenv(dotenv_path=DEFAULT_ENV_PATH, override=False)
+
+    selected_config = config_override.strip() if config_override else ""
+    if selected_config:
+        selected_path = _resolve_env_path(selected_config)
+        if not selected_path.exists():
+            raise RuntimeError(
+                f"Configured env file not found: {selected_config} (resolved: {selected_path})"
+            )
+        load_dotenv(dotenv_path=selected_path, override=True)
+
+    active_profile = os.getenv("MAIL_ACTIVE_CONFIG", "").strip()
+    if not active_profile:
+        return
+
+    profile_path = _resolve_env_path(active_profile)
+    if not profile_path.exists():
+        raise RuntimeError(
+            f"Configured active profile not found: {active_profile} (resolved: {profile_path})"
+        )
+    load_dotenv(dotenv_path=profile_path, override=True)
 
 
 def build_cron_line(schedule: str = "*/5 * * * *", log_file: str = "/tmp/mail_check.log") -> str:
@@ -69,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print a cron line with the current python and script path, then exit.",
     )
+    parser.add_argument("--config", "-c", default="", help="Optional full settings .env file to load.")
 
     subparsers = parser.add_subparsers(dest="command")
 
@@ -91,6 +124,40 @@ def build_parser() -> argparse.ArgumentParser:
         "--test-output",
         default="OK - Icinga test only (no mailbox check).",
         help="Plugin output text for icinga test command.",
+    )
+
+    template_parser = subparsers.add_parser(
+        "template-config",
+        help="Create match-criteria config from a mail header template.",
+    )
+    template_parser.add_argument(
+        "--template-file",
+        "-f",
+        default=os.getenv("MAIL_HEADER_TEMPLATE_FILE", ""),
+        required=not os.getenv("MAIL_HEADER_TEMPLATE_FILE"),
+        help="Path to template header file.",
+    )
+    template_parser.add_argument(
+        "--output",
+        "-o",
+        default="",
+        help="Optional match-criteria output .env path (default: ./config/match_criteria_<name>.env).",
+    )
+    template_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing output match-criteria file.",
+    )
+    template_parser.add_argument(
+        "--new-config",
+        default="",
+        help="Optional full settings config name/path created from settings.env.example.",
+    )
+    template_parser.add_argument(
+        "--set-default",
+        "-d",
+        action="store_true",
+        help="Write MAIL_ACTIVE_CONFIG into config/settings.env.",
     )
 
     return parser
@@ -169,6 +236,190 @@ def _collect_template_header_filters(args: argparse.Namespace) -> List[Tuple[str
             selected.append((raw_key, value))
 
     return selected
+
+
+def _get_header_case_insensitive(headers: Dict[str, str], header_name: str) -> str:
+    for key, value in headers.items():
+        if key.lower() == header_name.lower():
+            return value
+    return ""
+
+
+def _normalize_template_name(path: str) -> str:
+    stem = Path(path).stem
+    ascii_stem = (
+        unicodedata.normalize("NFKD", stem)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .lower()
+    )
+    normalized = re.sub(r"[^a-z0-9]+", "_", ascii_stem).strip("_")
+    if not normalized:
+        normalized = "mail_template"
+    return normalized
+
+
+def _format_env_value(value: str) -> str:
+    if value == "":
+        return ""
+    if re.fullmatch(r"[A-Za-z0-9._/@:+-]+", value):
+        return value
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def _write_match_criteria_env_file(path: Path, values: Dict[str, str]) -> None:
+    lines = [
+        "# Match criteria",
+        f"MAIL_SUBJECT_CONTAINS={_format_env_value(values['MAIL_SUBJECT_CONTAINS'])}",
+        f"MAIL_FROM_CONTAINS={_format_env_value(values['MAIL_FROM_CONTAINS'])}",
+        "MAIL_HEADER_TEMPLATE_FILE=",
+        f"MAIL_TEMPLATE_HEADERS={_format_env_value(values['MAIL_TEMPLATE_HEADERS'])}",
+        f"MAIL_INCLUDE_SEEN={_format_env_value(values['MAIL_INCLUDE_SEEN'])}",
+        f"MAIL_DELETE_MATCH={_format_env_value(values['MAIL_DELETE_MATCH'])}",
+        "",
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _set_default_active_config(env_path: Path, value: str) -> None:
+    existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+    lines = existing.splitlines()
+    found = False
+    updated: List[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("MAIL_ACTIVE_CONFIG="):
+            updated.append(f"MAIL_ACTIVE_CONFIG={_format_env_value(value)}")
+            found = True
+        else:
+            updated.append(line)
+
+    if not found:
+        if updated and updated[-1] != "":
+            updated.append("")
+        updated.append("# Optional default match criteria profile")
+        updated.append(f"MAIL_ACTIVE_CONFIG={_format_env_value(value)}")
+
+    env_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+
+
+def _is_protected_settings_path(path: Path) -> bool:
+    return path.resolve() == DEFAULT_ENV_PATH.resolve()
+
+
+def _ensure_env_suffix(raw_value: str) -> str:
+    candidate = raw_value.strip()
+    if not candidate:
+        return candidate
+    if not candidate.endswith(".env"):
+        return f"{candidate}.env"
+    return candidate
+
+
+def _path_for_env_reference(path: Path) -> str:
+    try:
+        relative = os.path.relpath(path, PROJECT_ROOT)
+    except ValueError:
+        return str(path.resolve())
+    if relative.startswith(".."):
+        return str(path.resolve())
+    return relative
+
+
+def _build_match_criteria_values(raw_headers: Dict[str, str]) -> Dict[str, str]:
+    subject = _get_header_case_insensitive(raw_headers, "Subject").strip()
+    from_header = _get_header_case_insensitive(raw_headers, "From").strip()
+    from_contains = _extract_email(from_header) if from_header else ""
+    if not subject:
+        raise RuntimeError("template file has no Subject header.")
+
+    return {
+        "MAIL_SUBJECT_CONTAINS": subject,
+        "MAIL_FROM_CONTAINS": from_contains,
+        "MAIL_TEMPLATE_HEADERS": os.getenv("MAIL_TEMPLATE_HEADERS", "Subject,From,To,Return-Path,X-KasLoop"),
+        "MAIL_INCLUDE_SEEN": os.getenv("MAIL_INCLUDE_SEEN", "0"),
+        "MAIL_DELETE_MATCH": os.getenv("MAIL_DELETE_MATCH", "0"),
+    }
+
+
+def _write_new_full_settings_from_example(target_path: Path, active_profile: str) -> None:
+    if not DEFAULT_ENV_EXAMPLE_PATH.exists():
+        raise RuntimeError(f"settings example not found: {DEFAULT_ENV_EXAMPLE_PATH}")
+    lines = DEFAULT_ENV_EXAMPLE_PATH.read_text(encoding="utf-8").splitlines()
+
+    found = False
+    updated: List[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("MAIL_ACTIVE_CONFIG="):
+            updated.append(f"MAIL_ACTIVE_CONFIG={_format_env_value(active_profile)}")
+            found = True
+        else:
+            updated.append(line)
+
+    if not found:
+        if updated and updated[-1] != "":
+            updated.append("")
+        updated.append("# Optional default match criteria profile")
+        updated.append(f"MAIL_ACTIVE_CONFIG={_format_env_value(active_profile)}")
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+
+
+def _run_template_config_command(args: argparse.Namespace) -> int:
+    template_path = _resolve_env_path(args.template_file)
+    if not template_path.exists():
+        print(f"ERROR - template file not found: {args.template_file} (resolved: {template_path})")
+        return 3
+
+    raw_headers = _parse_raw_headers(str(template_path))
+    try:
+        criteria_values = _build_match_criteria_values(raw_headers)
+    except RuntimeError as exc:
+        print(f"ERROR - {exc}")
+        return 3
+
+    default_name = f"match_criteria_{_normalize_template_name(str(template_path))}.env"
+    output_value = args.output.strip() if args.output else f"config/{default_name}"
+    output_path = _resolve_env_path(_ensure_env_suffix(output_value))
+    if _is_protected_settings_path(output_path):
+        print(f"ERROR - protected file cannot be overwritten: {DEFAULT_ENV_PATH}")
+        return 3
+
+    if output_path.exists() and not args.force:
+        print(f"ERROR - output file exists already: {output_path}")
+        return 3
+
+    _write_match_criteria_env_file(output_path, criteria_values)
+
+    output_ref = _path_for_env_reference(output_path)
+    print(f"OK - match criteria config created: {output_path}")
+    print(f"Template subject -> MAIL_SUBJECT_CONTAINS: {criteria_values['MAIL_SUBJECT_CONTAINS']}")
+    if criteria_values["MAIL_FROM_CONTAINS"]:
+        print(f"Template from -> MAIL_FROM_CONTAINS: {criteria_values['MAIL_FROM_CONTAINS']}")
+
+    if args.new_config:
+        new_config_candidate = _ensure_env_suffix(args.new_config.strip())
+        if "/" not in new_config_candidate:
+            new_config_candidate = f"config/{new_config_candidate}"
+        new_config_path = _resolve_env_path(new_config_candidate)
+        if _is_protected_settings_path(new_config_path):
+            print(f"ERROR - protected file cannot be overwritten: {DEFAULT_ENV_PATH}")
+            return 3
+        if new_config_path.exists():
+            print(f"ERROR - new config file exists already: {new_config_path}")
+            return 3
+        _write_new_full_settings_from_example(new_config_path, output_ref)
+        print(f"OK - full settings config created from example: {new_config_path}")
+
+    if args.set_default:
+        _set_default_active_config(DEFAULT_ENV_PATH, output_ref)
+        print(f"Default profile set in {DEFAULT_ENV_PATH}: MAIL_ACTIVE_CONFIG={output_ref}")
+
+    return 0
 
 
 def find_matching_message_ids(args: argparse.Namespace) -> Tuple[List[bytes], str]:
@@ -367,7 +618,15 @@ def _run_icinga_command(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    load_runtime_env()
+    bootstrap = argparse.ArgumentParser(add_help=False)
+    bootstrap.add_argument("--config", "-c", default="")
+    bootstrap_args, _ = bootstrap.parse_known_args()
+    try:
+        load_runtime_env(config_override=bootstrap_args.config)
+    except Exception as exc:
+        print(f"ERROR - failed to load runtime config: {exc}")
+        return 3
+
     parser = build_parser()
     args = parser.parse_args()
     if args.print_cron_line:
@@ -388,6 +647,9 @@ def main() -> int:
 
     if args.command == "icinga":
         return _run_icinga_command(args)
+
+    if args.command == "template-config":
+        return _run_template_config_command(args)
 
     parser.print_help()
     return 0
