@@ -14,7 +14,7 @@ Dieses Projekt enthält ein Skript, das:
 ## Python venv
 
 ```bash
-cd /home/patric/apache/projekte/check_emails
+cd /path/to/check_emails
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -33,30 +33,48 @@ deactivate
    cp config/mail_check.env.example config/mail_check.env
    ```
 2. Werte in `config/mail_check.env` eintragen.
+3. Die Datei wird beim Skriptstart automatisch via dotenv geladen.
 
 ## Aufruf
 
 ```bash
 source .venv/bin/activate
-set -a
-source config/mail_check.env
-set +a
 
+# zeigt nur die Hilfe
 ./scripts/check_mail_and_notify_icinga.py
+
+# prüft Mailbox + sendet Ergebnis an Icinga
+./scripts/check_mail_and_notify_icinga.py check
+
+# prüft nur Mailbox (kein Icinga-Submit)
+./scripts/check_mail_and_notify_icinga.py email
+
+# testet nur Icinga-Submit (kein Mailbox-Poll)
+./scripts/check_mail_and_notify_icinga.py icinga
 ```
 
 ## Alle 5 Minuten per Cron
 
-```cron
-*/5 * * * * cd /home/patric/apache/projekte/check_emails && set -a && . ./config/mail_check.env && set +a && ./scripts/check_mail_and_notify_icinga.py >> /tmp/mail_check.log 2>&1
+Cron-Zeile mit aktuellen Pfaden automatisch ausgeben:
+
+```bash
+.venv/bin/python ./scripts/check_mail_and_notify_icinga.py --print-cron-line
 ```
+
+```cron
+*/5 * * * * /path/to/check_emails/.venv/bin/python /path/to/check_emails/scripts/check_mail_and_notify_icinga.py check >> /tmp/mail_check.log 2>&1
+```
+
+Hinweis:
+- `set -a` und `source config/mail_check.env` sind nicht mehr nötig, da das Skript die Datei per dotenv selbst lädt.
+- Der Aufruf über die venv-Python stellt sicher, dass `python-dotenv` in Cron auch wirklich verfügbar ist.
 
 ## Match-Logik
 
 - Standardmäßig wird auf `UNSEEN` geprüft.
 - `MAIL_SUBJECT_CONTAINS` und optional `MAIL_FROM_CONTAINS` verengen die Suche.
 - Optional kann ein kompletter Header als Vorlage genutzt werden:
-  `MAIL_HEADER_TEMPLATE_FILE=/.../diverses/mail_header.txt`.
+  `MAIL_HEADER_TEMPLATE_FILE=/.../vorlagen/mail_header.txt`.
 - Welche Header daraus in die Suche einfließen, steuerst du mit
   `MAIL_TEMPLATE_HEADERS` (CSV), z. B. `Subject,From,To,Return-Path,X-KasLoop`.
 - Bei Header-Vorlage werden `From`/`To`/`Return-Path` automatisch auf die reine
@@ -64,11 +82,9 @@ set +a
   Leerzeichen erzeugt.
 - Mit `MAIL_DELETE_MATCH=1` werden Treffer nach dem Check gelöscht.
 
-## Icinga Benachrichtigung (optional)
+## Icinga-Konfiguration
 
-- Standard: `MAIL_NOTIFY_ICINGA=1` (Benachrichtigung aktiv).
-- Deaktivieren mit `MAIL_NOTIFY_ICINGA=0` oder CLI-Flag `--no-notify-icinga`.
-- Wenn Benachrichtigung aktiv ist, sind `ICINGA_URL`, `ICINGA_USER`,
+- Für `check` und `icinga` sind `ICINGA_URL`, `ICINGA_USER`,
   `ICINGA_PASSWORD`, `ICINGA_HOST`, `ICINGA_SERVICE` Pflicht.
 - Für Debug-Ausgabe des kompletten API-Calls:
   `MAIL_DEBUG_ICINGA=1`
@@ -137,12 +153,12 @@ sudo systemctl reload icinga2
 Entweder per Cron (siehe Abschnitt oben) oder per systemd timer auf dem System,
 das Zugriff auf IMAP und die Icinga2-API hat.
 
-### 5. Optional: nur lokal prüfen, ohne API-Meldung
+### 5. Optional: nur Mailbox prüfen, ohne API-Meldung
 
 Wenn der Exit-Code anderweitig verarbeitet wird:
 
 ```bash
-MAIL_NOTIFY_ICINGA=0
+./scripts/check_mail_and_notify_icinga.py email
 ```
 
 ## Troubleshooting Icinga-Submit
@@ -159,6 +175,10 @@ MAIL_NOTIFY_ICINGA=0
 
 ## Exit-Codes
 
-- `0`: Matching-Mail gefunden (OK)
-- `2`: Keine Matching-Mail gefunden (CRITICAL)
-- `3`: Technischer Fehler (UNKNOWN)
+- `check`/`email`:
+  - `0`: Matching-Mail gefunden (OK)
+  - `2`: Keine Matching-Mail gefunden (CRITICAL)
+  - `3`: Technischer Fehler (UNKNOWN)
+- `icinga`:
+  - `0`: Test-Submit erfolgreich
+  - `3`: Technischer Fehler beim Icinga-Submit

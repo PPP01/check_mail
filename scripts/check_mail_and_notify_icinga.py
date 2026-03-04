@@ -9,48 +9,91 @@ import ssl
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Dict, List, Tuple
 
+from dotenv import load_dotenv
 
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description=(
-            "Poll IMAP mailbox for expected message, optionally delete it, "
-            "then optionally submit passive result to Icinga2 API."
-        )
-    )
 
-    p.add_argument("--imap-host", default=os.getenv("IMAP_HOST"), required=not os.getenv("IMAP_HOST"))
-    p.add_argument("--imap-port", type=int, default=int(os.getenv("IMAP_PORT", "993")))
-    p.add_argument("--imap-user", default=os.getenv("IMAP_USER"), required=not os.getenv("IMAP_USER"))
-    p.add_argument("--imap-password", default=os.getenv("IMAP_PASSWORD"), required=not os.getenv("IMAP_PASSWORD"))
-    p.add_argument("--mailbox", default=os.getenv("IMAP_MAILBOX", "INBOX"))
+def load_runtime_env() -> None:
+    env_path = Path(__file__).resolve().parents[1] / "config" / "mail_check.env"
+    load_dotenv(dotenv_path=env_path, override=False)
 
-    p.add_argument("--subject-contains", default=os.getenv("MAIL_SUBJECT_CONTAINS", ""))
-    p.add_argument("--from-contains", default=os.getenv("MAIL_FROM_CONTAINS", ""))
-    p.add_argument("--header-template-file", default=os.getenv("MAIL_HEADER_TEMPLATE_FILE", ""))
-    p.add_argument(
+
+def build_cron_line(schedule: str = "*/5 * * * *", log_file: str = "/tmp/mail_check.log") -> str:
+    python_path = Path(sys.executable)
+    script_path = Path(__file__).resolve()
+    return f"{schedule} {python_path} {script_path} check >> {log_file} 2>&1"
+
+
+def _add_mail_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--imap-host", default=os.getenv("IMAP_HOST"), required=not os.getenv("IMAP_HOST"))
+    parser.add_argument("--imap-port", type=int, default=int(os.getenv("IMAP_PORT", "993")))
+    parser.add_argument("--imap-user", default=os.getenv("IMAP_USER"), required=not os.getenv("IMAP_USER"))
+    parser.add_argument("--imap-password", default=os.getenv("IMAP_PASSWORD"), required=not os.getenv("IMAP_PASSWORD"))
+    parser.add_argument("--mailbox", default=os.getenv("IMAP_MAILBOX", "INBOX"))
+
+    parser.add_argument("--subject-contains", default=os.getenv("MAIL_SUBJECT_CONTAINS", ""))
+    parser.add_argument("--from-contains", default=os.getenv("MAIL_FROM_CONTAINS", ""))
+    parser.add_argument("--header-template-file", default=os.getenv("MAIL_HEADER_TEMPLATE_FILE", ""))
+    parser.add_argument(
         "--template-headers",
         default=os.getenv("MAIL_TEMPLATE_HEADERS", "Subject,From,To,Return-Path,X-KasLoop"),
         help="Comma-separated header names to load from --header-template-file",
     )
-    p.add_argument("--include-seen", action="store_true", default=os.getenv("MAIL_INCLUDE_SEEN", "0") == "1")
-    p.add_argument("--delete-match", action="store_true", default=os.getenv("MAIL_DELETE_MATCH", "0") == "1")
+    parser.add_argument("--include-seen", action="store_true", default=os.getenv("MAIL_INCLUDE_SEEN", "0") == "1")
+    parser.add_argument("--delete-match", action="store_true", default=os.getenv("MAIL_DELETE_MATCH", "0") == "1")
 
-    p.add_argument("--notify-icinga", dest="notify_icinga", action="store_true")
-    p.add_argument("--no-notify-icinga", dest="notify_icinga", action="store_false")
-    p.set_defaults(notify_icinga=os.getenv("MAIL_NOTIFY_ICINGA", "1") == "1")
 
-    p.add_argument("--icinga-url", default=os.getenv("ICINGA_URL"))
-    p.add_argument("--icinga-user", default=os.getenv("ICINGA_USER"))
-    p.add_argument("--icinga-password", default=os.getenv("ICINGA_PASSWORD"))
-    p.add_argument("--icinga-host", default=os.getenv("ICINGA_HOST"))
-    p.add_argument("--icinga-service", default=os.getenv("ICINGA_SERVICE"))
-    p.add_argument("--icinga-verify-tls", action="store_true", default=os.getenv("ICINGA_VERIFY_TLS", "1") == "1")
-    p.add_argument("--debug-icinga", action="store_true", default=os.getenv("MAIL_DEBUG_ICINGA", "0") == "1")
-    p.add_argument("--icinga-dry-run", action="store_true", default=os.getenv("MAIL_ICINGA_DRY_RUN", "0") == "1")
+def _add_icinga_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--icinga-url", default=os.getenv("ICINGA_URL"))
+    parser.add_argument("--icinga-user", default=os.getenv("ICINGA_USER"))
+    parser.add_argument("--icinga-password", default=os.getenv("ICINGA_PASSWORD"))
+    parser.add_argument("--icinga-host", default=os.getenv("ICINGA_HOST"))
+    parser.add_argument("--icinga-service", default=os.getenv("ICINGA_SERVICE"))
+    parser.add_argument("--icinga-verify-tls", action="store_true", default=os.getenv("ICINGA_VERIFY_TLS", "1") == "1")
+    parser.add_argument("--debug-icinga", action="store_true", default=os.getenv("MAIL_DEBUG_ICINGA", "0") == "1")
+    parser.add_argument("--icinga-dry-run", action="store_true", default=os.getenv("MAIL_ICINGA_DRY_RUN", "0") == "1")
 
-    return p.parse_args()
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Mailbox check and optional Icinga2 submit via subcommands. "
+            "Run without command to show help."
+        )
+    )
+
+    parser.add_argument(
+        "--print-cron-line",
+        action="store_true",
+        help="Print a cron line with the current python and script path, then exit.",
+    )
+
+    subparsers = parser.add_subparsers(dest="command")
+
+    check_parser = subparsers.add_parser("check", help="Check mailbox and submit result to Icinga.")
+    _add_mail_args(check_parser)
+    _add_icinga_args(check_parser)
+
+    email_parser = subparsers.add_parser("email", help="Check mailbox only, no Icinga submit.")
+    _add_mail_args(email_parser)
+
+    icinga_parser = subparsers.add_parser("icinga", help="Submit test result to Icinga only.")
+    _add_icinga_args(icinga_parser)
+    icinga_parser.add_argument(
+        "--test-exit-status",
+        type=int,
+        default=0,
+        help="Exit status to submit for icinga test command.",
+    )
+    icinga_parser.add_argument(
+        "--test-output",
+        default="OK - Icinga test only (no mailbox check).",
+        help="Plugin output text for icinga test command.",
+    )
+
+    return parser
 
 
 def _decode_header_val(value: str) -> str:
@@ -271,46 +314,83 @@ def _missing_icinga_args(args: argparse.Namespace) -> List[str]:
     return missing
 
 
-def main() -> int:
-    args = parse_args()
-    if args.notify_icinga:
-        missing = _missing_icinga_args(args)
-        if missing:
-            print(f"UNKNOWN - Icinga notification enabled but missing settings: {', '.join(missing)}")
-            return 3
-
+def _run_email_check(args: argparse.Namespace) -> Tuple[int, str]:
     try:
         msg_ids, criteria = find_matching_message_ids(args)
     except Exception as exc:
-        error_output = f"UNKNOWN - mailbox poll failed: {exc}"
-        if args.notify_icinga:
-            try:
-                submit_passive_result(args, 3, error_output)
-            except Exception as notify_exc:
-                print(f"WARN - could not submit mailbox error to Icinga: {notify_exc}")
-        print(error_output)
-        return 3
+        return 3, f"UNKNOWN - mailbox poll failed: {exc}"
 
     if msg_ids:
-        output = (
-            f"OK - expected mail found ({len(msg_ids)} match(es)); "
-            f"criteria=[{criteria}]; delete_match={args.delete_match}"
+        return (
+            0,
+            f"OK - expected mail found ({len(msg_ids)} match(es)); criteria=[{criteria}]; delete_match={args.delete_match}",
         )
-        exit_code = 0
-    else:
-        output = f"CRITICAL - no matching mail found; criteria=[{criteria}]"
-        exit_code = 2
+    return 2, f"CRITICAL - no matching mail found; criteria=[{criteria}]"
 
-    if args.notify_icinga:
-        try:
-            submit_status = submit_passive_result(args, exit_code, output)
-            print(f"Icinga submit OK - {submit_status}")
-        except Exception as exc:
-            print(f"UNKNOWN - Icinga submit failed: {exc}")
-            return 3
+
+def _run_check_command(args: argparse.Namespace) -> int:
+    missing = _missing_icinga_args(args)
+    if missing:
+        print(f"UNKNOWN - Icinga settings missing: {', '.join(missing)}")
+        return 3
+
+    exit_code, output = _run_email_check(args)
+    try:
+        submit_status = submit_passive_result(args, exit_code, output)
+        print(f"Icinga submit OK - {submit_status}")
+    except Exception as exc:
+        print(f"UNKNOWN - Icinga submit failed: {exc}")
+        return 3
 
     print(output)
     return exit_code
+
+
+def _run_icinga_command(args: argparse.Namespace) -> int:
+    missing = _missing_icinga_args(args)
+    if missing:
+        print(f"UNKNOWN - Icinga settings missing: {', '.join(missing)}")
+        return 3
+
+    try:
+        submit_status = submit_passive_result(args, args.test_exit_status, args.test_output)
+        print(f"Icinga submit OK - {submit_status}")
+    except Exception as exc:
+        print(f"UNKNOWN - Icinga submit failed: {exc}")
+        return 3
+
+    print(
+        f"TEST - icinga command submitted test payload "
+        f"(exit_status={args.test_exit_status}, output={args.test_output!r})"
+    )
+    return 0
+
+
+def main() -> int:
+    load_runtime_env()
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.print_cron_line:
+        print(build_cron_line())
+        return 0
+
+    if not args.command:
+        parser.print_help()
+        return 0
+
+    if args.command == "check":
+        return _run_check_command(args)
+
+    if args.command == "email":
+        exit_code, output = _run_email_check(args)
+        print(output)
+        return exit_code
+
+    if args.command == "icinga":
+        return _run_icinga_command(args)
+
+    parser.print_help()
+    return 0
 
 
 if __name__ == "__main__":
