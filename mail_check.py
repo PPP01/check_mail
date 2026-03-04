@@ -67,7 +67,7 @@ def _read_env_key(path: Path, key: str) -> str:
     return ""
 
 
-def load_runtime_env(config_override: str = "") -> None:
+def load_runtime_env(config_override: str = "", require_active_profile: bool = True) -> str:
     load_dotenv(dotenv_path=DEFAULT_ENV_PATH, override=False)
 
     selected_config = config_override.strip() if config_override else ""
@@ -78,7 +78,7 @@ def load_runtime_env(config_override: str = "") -> None:
                 f"Configured env file not found: {selected_config} (resolved: {selected_path})"
             )
         selected_active_profile = _read_env_key(selected_path, "MAIL_ACTIVE_CONFIG")
-        if not selected_active_profile:
+        if not selected_active_profile and require_active_profile:
             raise RuntimeError(
                 f"Configured env file must define non-empty MAIL_ACTIVE_CONFIG: {selected_path}"
             )
@@ -86,14 +86,18 @@ def load_runtime_env(config_override: str = "") -> None:
 
     active_profile = os.getenv("MAIL_ACTIVE_CONFIG", "").strip()
     if not active_profile:
-        return
+        return ""
 
     profile_path = _resolve_env_path(active_profile)
     if not profile_path.exists():
-        raise RuntimeError(
+        message = (
             f"Configured active profile not found: {active_profile} (resolved: {profile_path})"
         )
+        if require_active_profile:
+            raise RuntimeError(message)
+        return message
     load_dotenv(dotenv_path=profile_path, override=True)
+    return ""
 
 
 def build_cron_line(schedule: str = "*/5 * * * *", log_file: str = "/tmp/mail_check.log") -> str:
@@ -1120,9 +1124,21 @@ def _ensure_active_profile_required(args: argparse.Namespace) -> int:
 def main() -> int:
     bootstrap = argparse.ArgumentParser(add_help=False)
     bootstrap.add_argument("--config", "-c", default="")
-    bootstrap_args, _ = bootstrap.parse_known_args()
+    bootstrap_args, remaining_args = bootstrap.parse_known_args()
+    help_requested = any(token in {"-h", "--help"} for token in remaining_args)
+    requested_command = ""
+    for token in remaining_args:
+        if token in {"check", "email", "icinga", "send", "template-config"}:
+            requested_command = token
+            break
+    require_active_profile = requested_command in {"check", "email", "icinga"} and not help_requested
+
+    runtime_warning = ""
     try:
-        load_runtime_env(config_override=bootstrap_args.config)
+        runtime_warning = load_runtime_env(
+            config_override=bootstrap_args.config,
+            require_active_profile=require_active_profile,
+        )
     except Exception as exc:
         print(f"ERROR - failed to load runtime config: {exc}")
         return 3
@@ -1134,6 +1150,8 @@ def main() -> int:
         return 0
 
     if not args.command:
+        if runtime_warning:
+            print(f"HINWEIS - {runtime_warning}")
         parser.print_help()
         return 0
 

@@ -1,6 +1,5 @@
 # Local secrets
 config/*.env
-vorlagen/
 
 # Logs
 *.log
