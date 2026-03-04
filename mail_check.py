@@ -943,6 +943,29 @@ def _send_via_sendmail(args: argparse.Namespace, message: EmailMessage) -> None:
     command = shlex.split(args.sendmail_command)
     if not command:
         raise RuntimeError("MAIL_SEND_SENDMAIL_COMMAND is empty.")
+    # Ensure envelope sender follows configured MAIL_SEND_FROM.
+    has_sender_flag = False
+    for idx, token in enumerate(command):
+        if token == "-f":
+            has_sender_flag = True
+            break
+        if token.startswith("-f") and len(token) > 2:
+            has_sender_flag = True
+            break
+        if token == "-r":
+            has_sender_flag = True
+            break
+        if token.startswith("-r") and len(token) > 2:
+            has_sender_flag = True
+            break
+        if token == "--":
+            break
+        # handle split form: -f sender@example.net
+        if token in {"-f", "-r"} and idx + 1 < len(command):
+            has_sender_flag = True
+            break
+    if args.send_from and not has_sender_flag:
+        command.extend(["-f", args.send_from])
     proc = subprocess.run(
         command,
         input=message.as_string(),

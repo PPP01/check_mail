@@ -204,7 +204,8 @@ Optionale Send-Werte (mit Defaults/Fallbacks):
 
 Backend-spezifisch:
 
-- `sendmail`: `MAIL_SEND_SENDMAIL_COMMAND` (Standard: `/usr/sbin/sendmail -t -i`)
+- `sendmail`: `MAIL_SEND_SENDMAIL_COMMAND` (Standard: `/usr/sbin/sendmail -t -i`),
+  Envelope-From wird aus `MAIL_SEND_FROM` per `-f` gesetzt
 - `mail`: `MAIL_SEND_MAIL_COMMAND` (Standard: `/usr/bin/mail`)
 - `smtp`: `MAIL_SEND_SMTP_HOST`, `MAIL_SEND_SMTP_PORT`, optional
   `MAIL_SEND_SMTP_USER`, `MAIL_SEND_SMTP_PASSWORD`,
