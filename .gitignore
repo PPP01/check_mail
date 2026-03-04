@@ -1,0 +1,11 @@
+# Local secrets
+config/mail_check.env
+**/mail_check.env
+
+# Logs
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+.venv/
