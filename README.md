@@ -5,7 +5,8 @@ Dieses Projekt enthält ein Skript, das:
 1. per IMAP ein Postfach abfragt,
 2. auf eine erwartete Mail prüft,
 3. die Treffer optional löscht,
-4. das Ergebnis optional als passiven Service-Check an Icinga2 meldet.
+4. das Ergebnis optional als passiven Service-Check an Icinga2 meldet,
+5. optional eine Testmail über `sendmail`, `mail` oder `smtp` versendet.
 
 ## Script
 
@@ -57,8 +58,19 @@ source .venv/bin/activate
 # testet nur Icinga-Submit (kein Mailbox-Poll)
 ./scripts/check_mail_and_notify_icinga.py icinga
 
+# Standard für icinga-Test: UNKNOWN (exit_status=3),
+# per Parameter überschreibbar, z. B. OK:
+./scripts/check_mail_and_notify_icinga.py icinga --test-exit-status 0 --test-output "OK - manueller Icinga-Test"
+
 # lädt eine alternative vollständige Config (wie settings.env.example aufgebaut)
 ./scripts/check_mail_and_notify_icinga.py -c config/mailbox_settings.env check
+
+# versendet eine Testmail über den konfigurierten Backend-Weg
+./scripts/check_mail_and_notify_icinga.py send
+
+# Backend explizit überschreiben
+./scripts/check_mail_and_notify_icinga.py send --send-backend mail
+./scripts/check_mail_and_notify_icinga.py send --send-backend smtp
 
 # erstellt aus einer Mail-Quelltext-Vorlage eine Match-Criteria-Config
 ./scripts/check_mail_and_notify_icinga.py template-config -f ./vorlagen/kvm-web-guh.txt
@@ -137,6 +149,43 @@ Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nic
   `ICINGA_DEBUG=1`
 - Für reinen Test ohne echten Submit:
   `ICINGA_DRY_RUN=1` (nur zusammen mit Debug sinnvoll).
+
+## Mail-Versand-Konfiguration (`send`)
+
+Der Command `send` prüft den realen Versandweg einer Anwendung. Unterstützte Wege:
+
+- `sendmail` (z. B. PHP `sendmail_path=/usr/sbin/sendmail -t -i`)
+- `mail` (z. B. `/usr/bin/mail` aus CLI)
+- `smtp` (direkter SMTP-Versand)
+
+Pflicht-/Basiswerte:
+
+- `MAIL_SEND_BACKEND=sendmail|mail|smtp`
+- `MAIL_SEND_TO=<zieladresse>`
+- `MAIL_SEND_FROM=<absenderadresse>`
+- `MAIL_SEND_SUBJECT=<betreff>`
+- `MAIL_SEND_BODY=<inhalt>`
+
+Backend-spezifisch:
+
+- `sendmail`: `MAIL_SEND_SENDMAIL_COMMAND` (Standard: `/usr/sbin/sendmail -t -i`)
+- `mail`: `MAIL_SEND_MAIL_COMMAND` (Standard: `/usr/bin/mail`)
+- `smtp`: `MAIL_SEND_SMTP_HOST`, `MAIL_SEND_SMTP_PORT`, optional
+  `MAIL_SEND_SMTP_USER`, `MAIL_SEND_SMTP_PASSWORD`,
+  `MAIL_SEND_SMTP_STARTTLS`, `MAIL_SEND_SMTP_SSL`
+
+Beispiele:
+
+```bash
+# sendmail
+./scripts/check_mail_and_notify_icinga.py send --send-backend sendmail
+
+# mail
+./scripts/check_mail_and_notify_icinga.py send --send-backend mail
+
+# smtp
+./scripts/check_mail_and_notify_icinga.py send --send-backend smtp --smtp-host smtp.example.net
+```
 
 ## Einbindung in Icinga2
 
@@ -232,3 +281,6 @@ Wenn der Exit-Code anderweitig verarbeitet wird:
 - `template-config`:
   - `0`: Match-Criteria-Profil (und optional neue Voll-Config) erfolgreich erzeugt
   - `3`: Technischer Fehler (z. B. Vorlage fehlt, Header fehlt, Ziel existiert, geschützte Datei)
+- `send`:
+  - `0`: Testmail erfolgreich versendet
+  - `3`: Technischer Fehler beim Versand

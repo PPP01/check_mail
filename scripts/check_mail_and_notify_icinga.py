@@ -6,10 +6,13 @@ import imaplib
 import json
 import os
 import ssl
+import smtplib
+import subprocess
 import sys
 import urllib.error
 import urllib.request
 import unicodedata
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -120,6 +123,51 @@ def _add_icinga_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_send_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--send-backend",
+        default=os.getenv("MAIL_SEND_BACKEND", "sendmail"),
+        choices=["sendmail", "mail", "smtp"],
+        help="Mail send backend.",
+    )
+    parser.add_argument("--send-to", default=os.getenv("MAIL_SEND_TO"), required=not os.getenv("MAIL_SEND_TO"))
+    parser.add_argument("--send-from", default=os.getenv("MAIL_SEND_FROM"), required=not os.getenv("MAIL_SEND_FROM"))
+    parser.add_argument(
+        "--send-subject",
+        default=os.getenv("MAIL_SEND_SUBJECT", "IcingaMail: Send test"),
+    )
+    parser.add_argument(
+        "--send-body",
+        default=os.getenv("MAIL_SEND_BODY", "IcingaMail Send test"),
+    )
+
+    parser.add_argument(
+        "--sendmail-command",
+        default=os.getenv("MAIL_SEND_SENDMAIL_COMMAND", "/usr/sbin/sendmail -t -i"),
+        help="Command used for sendmail backend.",
+    )
+    parser.add_argument(
+        "--mail-command",
+        default=os.getenv("MAIL_SEND_MAIL_COMMAND", "/usr/bin/mail"),
+        help="Command used for mail backend.",
+    )
+
+    parser.add_argument("--smtp-host", default=os.getenv("MAIL_SEND_SMTP_HOST", ""))
+    parser.add_argument("--smtp-port", type=int, default=int(os.getenv("MAIL_SEND_SMTP_PORT", "587")))
+    parser.add_argument("--smtp-user", default=os.getenv("MAIL_SEND_SMTP_USER", ""))
+    parser.add_argument("--smtp-password", default=os.getenv("MAIL_SEND_SMTP_PASSWORD", ""))
+    parser.add_argument(
+        "--smtp-starttls",
+        action="store_true",
+        default=os.getenv("MAIL_SEND_SMTP_STARTTLS", "1") == "1",
+    )
+    parser.add_argument(
+        "--smtp-ssl",
+        action="store_true",
+        default=os.getenv("MAIL_SEND_SMTP_SSL", "0") == "1",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -149,14 +197,17 @@ def build_parser() -> argparse.ArgumentParser:
     icinga_parser.add_argument(
         "--test-exit-status",
         type=int,
-        default=0,
+        default=3,
         help="Exit status to submit for icinga test command.",
     )
     icinga_parser.add_argument(
         "--test-output",
-        default="OK - Icinga test only (no mailbox check).",
+        default="UNKNOWN - Icinga test only (no mailbox check).",
         help="Plugin output text for icinga test command.",
     )
+
+    send_parser = subparsers.add_parser("send", help="Send test mail via configured backend.")
+    _add_send_args(send_parser)
 
     template_parser = subparsers.add_parser(
         "template-config",
@@ -592,6 +643,89 @@ def _missing_icinga_args(args: argparse.Namespace) -> List[str]:
     return missing
 
 
+def _build_send_message(args: argparse.Namespace) -> EmailMessage:
+    message = EmailMessage()
+    message["From"] = args.send_from
+    message["To"] = args.send_to
+    message["Subject"] = args.send_subject
+    message.set_content(args.send_body)
+    return message
+
+
+def _send_via_sendmail(args: argparse.Namespace, message: EmailMessage) -> None:
+    command = shlex.split(args.sendmail_command)
+    if not command:
+        raise RuntimeError("MAIL_SEND_SENDMAIL_COMMAND is empty.")
+    proc = subprocess.run(
+        command,
+        input=message.as_string(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        stderr = proc.stderr.strip() or proc.stdout.strip()
+        raise RuntimeError(f"sendmail command failed (exit={proc.returncode}): {stderr}")
+
+
+def _send_via_mail_cmd(args: argparse.Namespace) -> None:
+    command = shlex.split(args.mail_command)
+    if not command:
+        raise RuntimeError("MAIL_SEND_MAIL_COMMAND is empty.")
+    command.extend(["-s", args.send_subject])
+    if args.send_from:
+        command.extend(["-r", args.send_from])
+    command.append(args.send_to)
+
+    proc = subprocess.run(
+        command,
+        input=args.send_body,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        stderr = proc.stderr.strip() or proc.stdout.strip()
+        raise RuntimeError(f"mail command failed (exit={proc.returncode}): {stderr}")
+
+
+def _send_via_smtp(args: argparse.Namespace, message: EmailMessage) -> None:
+    if not args.smtp_host:
+        raise RuntimeError("MAIL_SEND_SMTP_HOST/--smtp-host is required for smtp backend.")
+
+    smtp_cls = smtplib.SMTP_SSL if args.smtp_ssl else smtplib.SMTP
+    context = ssl.create_default_context()
+    with smtp_cls(args.smtp_host, args.smtp_port, timeout=15) as client:
+        if not args.smtp_ssl and args.smtp_starttls:
+            client.starttls(context=context)
+        if args.smtp_user:
+            client.login(args.smtp_user, args.smtp_password)
+        client.send_message(message)
+
+
+def _run_send_command(args: argparse.Namespace) -> int:
+    message = _build_send_message(args)
+    try:
+        if args.send_backend == "sendmail":
+            _send_via_sendmail(args, message)
+        elif args.send_backend == "mail":
+            _send_via_mail_cmd(args)
+        elif args.send_backend == "smtp":
+            _send_via_smtp(args, message)
+        else:
+            print(f"ERROR - unsupported send backend: {args.send_backend}")
+            return 3
+    except Exception as exc:
+        print(f"ERROR - send failed: {exc}")
+        return 3
+
+    print(
+        f"OK - send command delivered test mail via backend={args.send_backend}; "
+        f"to={args.send_to}; subject={args.send_subject!r}"
+    )
+    return 0
+
+
 def _run_email_check(args: argparse.Namespace) -> Tuple[int, str]:
     try:
         msg_ids, criteria = find_matching_message_ids(args)
@@ -645,7 +779,7 @@ def _run_icinga_command(args: argparse.Namespace) -> int:
 
 
 def _ensure_active_profile_required(args: argparse.Namespace) -> int:
-    if args.command == "template-config":
+    if args.command in {"template-config", "send"}:
         return 0
     active_profile = os.getenv("MAIL_ACTIVE_CONFIG", "").strip()
     if active_profile:
@@ -688,6 +822,9 @@ def main() -> int:
 
     if args.command == "icinga":
         return _run_icinga_command(args)
+
+    if args.command == "send":
+        return _run_send_command(args)
 
     if args.command == "template-config":
         return _run_template_config_command(args)
