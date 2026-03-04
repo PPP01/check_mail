@@ -33,9 +33,9 @@ Vorteile:
 ### 3.1 Projekt bereitstellen
 
 ```bash
-cd /opt
-git clone <repo-url> check_emails
-cd check_emails
+cd /usr/lib/nagios/plugins
+git clone https://github.com/PPP01/check_mail.git
+cd check_mail
 ```
 
 ### 3.2 Python-Umgebung aufbauen
@@ -145,45 +145,57 @@ Beispiel-Datei: `/etc/icinga2/conf.d/mail-heartbeat-commands.conf`
 
 ```icinga2
 object CheckCommand "mail_heartbeat_send" {
-  command = [ "/opt/check_emails/.venv/bin/python", "/opt/check_emails/mail_check.py", "send" ]
+  command = [ "/usr/lib/nagios/plugins/check_mail/.venv/bin/python", "/usr/lib/nagios/plugins/check_mail/mail_check.py", "send" ]
 }
 
 object CheckCommand "mail_heartbeat_receive" {
-  command = [ "/opt/check_emails/.venv/bin/python", "/opt/check_emails/mail_check.py", "check", "--no-icinga-submit" ]
+  command = [ "/usr/lib/nagios/plugins/check_mail/.venv/bin/python", "/usr/lib/nagios/plugins/check_mail/mail_check.py", "check" ]
 }
 ```
 
-### 5.2 Host-Objekt
+Hinweis: Wenn `mail_heartbeat_receive` wie oben ohne `--no-icinga-submit` läuft, setze `ICINGA_PASSIVE_CHECK=0`, falls kein passiver API-Submit gewünscht ist.
+
+### 5.2 Host-Objekte
 
 Beispiel-Datei: `/etc/icinga2/conf.d/mail-heartbeat-hosts.conf`
 
 ```icinga2
-object Host "mail-heartbeat-host" {
+object Host "beispiel-host-sender" {
   import "generic-host"
   address = "127.0.0.1"
   check_command = "hostalive"
+  vars.send_heartbeat = true
+}
+
+object Host "beispiel-host-empfaenger" {
+  import "generic-host"
+  address = "127.0.0.1"
+  check_command = "hostalive"
+  vars.receive_heartbeat = true
 }
 ```
 
-### 5.3 Service-Objekte
+### 5.3 Service-Apply-Regeln
 
 Beispiel-Datei: `/etc/icinga2/conf.d/mail-heartbeat-services.conf`
 
 ```icinga2
-object Service "mail-heartbeat-send" {
-  host_name = "mail-heartbeat-host"
+apply Service "Mail Heartbeat Send" {
+  import "generic-service"
   check_command = "mail_heartbeat_send"
   check_interval = 5m
   retry_interval = 1m
-  max_check_attempts = 1
+  max_check_attempts = 3
+  assign where host.vars.send_heartbeat == true
 }
 
-object Service "mail-heartbeat-receive" {
-  host_name = "mail-heartbeat-host"
+apply Service "Mail Heartbeat Receive" {
+  import "generic-service"
   check_command = "mail_heartbeat_receive"
   check_interval = 5m
   retry_interval = 1m
-  max_check_attempts = 1
+  max_check_attempts = 3
+  assign where host.vars.receive_heartbeat == true
 }
 ```
 
