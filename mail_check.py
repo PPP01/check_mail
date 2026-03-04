@@ -1112,7 +1112,7 @@ def _run_email_check(args: argparse.Namespace) -> Tuple[int, str]:
             f"delivery_to_check_seconds={delivery_to_check_text} "
             f"mail_delivery_seconds={end_to_end_text}{perfdata}",
         )
-    return 2, f"CRITICAL - matching mail found but token check failed; criteria=[{criteria}]"
+    return 2, "CRITICAL - matching mail found, but JWT/JWS token validation failed (invalid signature, malformed token, or expired token)."
 
 
 def _run_check_command(args: argparse.Namespace) -> int:
