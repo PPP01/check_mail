@@ -124,3 +124,7 @@ Codex soll:
 Codex ist kein reiner Code-Generator, sondern ein technischer Mitdenker.
 
 ---
+
+# 8. GIT
+
+Commit Nachrichten immer auf deutsch schreiben.
