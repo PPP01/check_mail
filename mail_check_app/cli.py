@@ -3,12 +3,12 @@ import os
 import sys
 from pathlib import Path
 
-from .runtime import env_bool
+from .runtime import PROJECT_ROOT, env_bool
 
 
 def build_cron_line(
     schedule: str = "*/5 * * * *",
-    log_file: str = "/tmp/mail_check.log",
+    log_file: str = str(PROJECT_ROOT / "log" / "mail_check.log"),
     python_executable: str = "",
     script_path: str = "",
 ) -> str:

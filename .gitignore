@@ -3,6 +3,7 @@ config/*.env
 
 # Logs
 *.log
+mail_check.log
 
 # Python cache
 __pycache__/

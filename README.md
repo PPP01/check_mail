@@ -147,7 +147,7 @@ Cron-Zeile mit aktuellen Pfaden automatisch ausgeben:
 ```
 
 ```cron
-*/5 * * * * /path/to/check_emails/.venv/bin/python /path/to/check_emails/mail_check.py check >> /tmp/mail_check.log 2>&1
+*/5 * * * * /path/to/check_emails/.venv/bin/python /path/to/check_emails/mail_check.py check >> /var/log/check_mail/mail_check.log 2>&1
 ```
 
 Hinweis:
@@ -155,6 +155,7 @@ Hinweis:
 - Mit `--config`/`-c` lädst du eine alternative vollständige Settings-Datei (wie `settings.env.example` aufgebaut).
 - `MAIL_ACTIVE_CONFIG` in `config/settings.env` ist Pflicht.
 - Der Aufruf über die venv-Python stellt sicher, dass `python-dotenv` in Cron auch wirklich verfügbar ist.
+- Empfohlenes Ziel für produktive Logs: `/var/log/check_mail/mail_check.log` (mit passenden Dateirechten).
 
 ## Profil aus Vorlage erzeugen
 
