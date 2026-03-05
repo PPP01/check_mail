@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from email.message import EmailMessage
 
-from ..shared.jwt_utils import create_mailcheck_jwt
+from ..shared.jwt_utils import create_mailcheck_jwt, validate_mailcheck_secret
 
 
 def build_send_message(args) -> EmailMessage:
@@ -110,6 +110,11 @@ def run_send_command(args) -> int:
     """Execute the `send` command and print Nagios-compatible output."""
     if not args.mail_jwt_secret:
         print("ERROR - MAIL_CHECK_JWT_SECRET is required for send command.")
+        return 3
+    try:
+        validate_mailcheck_secret(args.mail_jwt_secret)
+    except RuntimeError as exc:
+        print(f"ERROR - {exc}")
         return 3
 
     if not args.send_to:

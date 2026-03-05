@@ -74,6 +74,7 @@ Für beide Pfade (`send` und `check`) ist relevant:
 
 - `MAIL_CHECK_JWT_SECRET`
 - optional `MAIL_CHECK_JWT_MAX_AGE_SECONDS`
+- `MAIL_CHECK_JWT_SECRET` muss mindestens 32 Zeichen lang sein.
 
 Nur für Empfang (`check`/`email`) zusätzlich erforderlich:
 

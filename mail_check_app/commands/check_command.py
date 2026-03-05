@@ -8,7 +8,7 @@ from email.utils import parsedate_to_datetime
 from typing import Dict, List, Optional, Tuple
 
 from ..shared.icinga_api import missing_icinga_args, submit_passive_result
-from ..shared.jwt_utils import parse_mailcheck_timestamp, verify_mailcheck_jwt
+from ..shared.jwt_utils import parse_mailcheck_timestamp, validate_mailcheck_secret, verify_mailcheck_jwt
 
 
 def decode_header_val(value: str) -> str:
@@ -158,7 +158,7 @@ def collect_valid_matches(args, msg_ids: List[bytes]) -> Tuple[List[bytes], Dict
                     secret=args.mail_jwt_secret,
                     max_age_seconds=args.mail_jwt_max_age_seconds,
                 )
-            except Exception:
+            except RuntimeError:
                 continue
 
             valid_ids.append(msg_id)
@@ -191,6 +191,10 @@ def run_email_check(args) -> Tuple[int, str]:
     """Run mailbox validation and return plugin exit code plus plugin output string."""
     if not args.mail_jwt_secret:
         return 3, "UNKNOWN - MAIL_CHECK_JWT_SECRET is required for mail validation."
+    try:
+        validate_mailcheck_secret(args.mail_jwt_secret)
+    except RuntimeError as exc:
+        return 3, f"UNKNOWN - {exc}"
 
     try:
         msg_ids, criteria = find_matching_message_ids(args)

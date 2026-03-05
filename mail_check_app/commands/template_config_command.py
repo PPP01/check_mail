@@ -182,6 +182,14 @@ def is_protected_settings_path(path: Path) -> bool:
     return path.resolve() == DEFAULT_ENV_PATH.resolve()
 
 
+def is_path_within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 def ensure_env_suffix(raw_value: str) -> str:
     candidate = raw_value.strip()
     if not candidate:
@@ -245,9 +253,15 @@ def write_new_full_settings_from_example(target_path: Path, active_profile: str)
 
 def run_template_config_command(args) -> int:
     """Generate match-criteria config (and optional full config) from a mail template."""
+    templates_root = (PROJECT_ROOT / "vorlagen").resolve()
+    config_root = (PROJECT_ROOT / "config").resolve()
+
     template_path = resolve_env_path(args.template_file)
     if not template_path.exists():
         print(f"ERROR - template file not found: {args.template_file} (resolved: {template_path})")
+        return 3
+    if not is_path_within(template_path, templates_root):
+        print(f"ERROR - template file must be inside: {templates_root}")
         return 3
 
     raw_headers, body_lines = parse_template_sections(str(template_path))
@@ -260,6 +274,9 @@ def run_template_config_command(args) -> int:
     default_name = f"match_criteria_{normalize_template_name(str(template_path))}.env"
     output_value = args.output.strip() if args.output else f"config/{default_name}"
     output_path = resolve_env_path(ensure_env_suffix(output_value))
+    if not is_path_within(output_path, config_root):
+        print(f"ERROR - output path must be inside: {config_root}")
+        return 3
     if is_protected_settings_path(output_path):
         print(f"ERROR - protected file cannot be overwritten: {DEFAULT_ENV_PATH}")
         return 3
@@ -283,6 +300,9 @@ def run_template_config_command(args) -> int:
         if "/" not in new_config_candidate:
             new_config_candidate = f"config/{new_config_candidate}"
         new_config_path = resolve_env_path(new_config_candidate)
+        if not is_path_within(new_config_path, config_root):
+            print(f"ERROR - new config path must be inside: {config_root}")
+            return 3
         if is_protected_settings_path(new_config_path):
             print(f"ERROR - protected file cannot be overwritten: {DEFAULT_ENV_PATH}")
             return 3

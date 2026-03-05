@@ -1,69 +1,73 @@
-import base64
-import hashlib
-import hmac
-import json
 import secrets
 from datetime import datetime, timezone
 from typing import Optional
 
+import jwt
+from jwt.exceptions import DecodeError, ExpiredSignatureError, InvalidAlgorithmError, InvalidSignatureError
 
-def b64url_encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+JWT_ISSUER = "mail-check"
+JWT_SUBJECT = "mail-delivery-check"
+MIN_JWT_SECRET_LENGTH = 32
 
 
-def b64url_decode(value: str) -> bytes:
-    padding = "=" * ((4 - len(value) % 4) % 4)
-    return base64.urlsafe_b64decode(value + padding)
+def validate_mailcheck_secret(secret: str) -> None:
+    if len(secret) < MIN_JWT_SECRET_LENGTH:
+        raise RuntimeError(
+            f"MAIL_CHECK_JWT_SECRET must be at least {MIN_JWT_SECRET_LENGTH} characters long."
+        )
 
 
 def create_mailcheck_jwt(secret: str, issued_at: datetime) -> str:
     """Create a signed HS256 JWT used to correlate send and receive checks."""
-    header = {"alg": "HS256", "typ": "JWT"}
+    validate_mailcheck_secret(secret)
     iat = int(issued_at.timestamp())
     payload = {
-        "iss": "mail-check",
-        "sub": "mail-delivery-check",
+        "iss": JWT_ISSUER,
+        "sub": JWT_SUBJECT,
         "iat": iat,
         "jti": secrets.token_hex(12),
     }
-    header_b64 = b64url_encode(json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8"))
-    payload_b64 = b64url_encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
-    signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
-    signature = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    signature_b64 = b64url_encode(signature)
-    return f"{header_b64}.{payload_b64}.{signature_b64}"
+    token = jwt.encode(payload, secret, algorithm="HS256", headers={"typ": "JWT"})
+    return token if isinstance(token, str) else token.decode("utf-8")
 
 
 def verify_mailcheck_jwt(token: str, secret: str, max_age_seconds: int) -> datetime:
     """Verify signature and age of a mail-check JWT and return its issue time."""
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise RuntimeError("JWT format invalid.")
-
-    header_b64, payload_b64, signature_b64 = parts
-    signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
-    expected_signature = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+    validate_mailcheck_secret(secret)
     try:
-        provided_signature = b64url_decode(signature_b64)
-    except Exception as exc:
-        raise RuntimeError("JWT signature encoding invalid.") from exc
-    if not hmac.compare_digest(expected_signature, provided_signature):
-        raise RuntimeError("JWT signature invalid.")
-
-    try:
-        header = json.loads(b64url_decode(header_b64).decode("utf-8"))
-        payload = json.loads(b64url_decode(payload_b64).decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        payload = jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            options={
+                "require": ["iat", "iss", "sub"],
+                "verify_exp": False,
+            },
+            issuer=JWT_ISSUER,
+        )
+    except ExpiredSignatureError as exc:
+        raise RuntimeError("JWT expired.") from exc
+    except InvalidSignatureError as exc:
+        raise RuntimeError("JWT signature invalid.") from exc
+    except InvalidAlgorithmError as exc:
+        raise RuntimeError("JWT algorithm not supported.") from exc
+    except DecodeError as exc:
         raise RuntimeError("JWT payload invalid.") from exc
+    except jwt.InvalidTokenError as exc:
+        raise RuntimeError(f"JWT invalid: {exc}") from exc
 
-    if header.get("alg") != "HS256":
-        raise RuntimeError("JWT algorithm not supported.")
+    if payload.get("sub") != JWT_SUBJECT:
+        raise RuntimeError("JWT subject invalid.")
 
     iat = payload.get("iat")
     if not isinstance(iat, int):
         raise RuntimeError("JWT iat claim missing.")
 
-    issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
+    try:
+        issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
+    except Exception as exc:
+        raise RuntimeError("JWT iat claim invalid.") from exc
     now_utc = datetime.now(timezone.utc)
     max_age = max(1, max_age_seconds)
     age = (now_utc - issued_at).total_seconds()

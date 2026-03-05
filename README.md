@@ -162,6 +162,7 @@ Wenn du nicht bei jedem Aufruf manuell Match-Kriterien pflegen willst:
 
 1. Lege in `vorlagen/` eine Datei mit dem vollständigen Mail-Quelltext an
    (Header + Body, nicht nur Header).
+   `template-config` akzeptiert nur Vorlagen innerhalb von `./vorlagen/`.
 2. Vorlage einlesen und Match-Criteria-Profil erzeugen:
    ```bash
    ./mail_check.py template-config -f ./vorlagen/kvm-web-guh.txt
@@ -183,10 +184,12 @@ Wenn du nicht bei jedem Aufruf manuell Match-Kriterien pflegen willst:
    ```bash
    ./mail_check.py template-config -f ./vorlagen/kvm-web-guh.txt -o config/match_criteria_custom.env
    ```
+   `-o/--output` ist nur innerhalb von `./config/` erlaubt.
 9. Existierende Match-Criteria-Datei gezielt überschreiben:
    ```bash
    ./mail_check.py template-config -f ./vorlagen/kvm-web-guh.txt -o config/match_criteria_custom.env --force
    ```
+10. `--new-config` ist ebenfalls nur innerhalb von `./config/` erlaubt.
 
 Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nicht als Ausgabeziel überschrieben.
 
@@ -197,6 +200,7 @@ Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nic
 - `MAIL_BODY_CONTAINS` sucht zusätzlich im Mail-Inhalt (Body).
 - `MAIL_CHECK_JWT_SECRET` wird zur JWT-Prüfung beim Empfang genutzt.
 - `MAIL_CHECK_JWT_MAX_AGE_SECONDS` begrenzt die maximale Token-Alterung.
+- `MAIL_CHECK_JWT_SECRET` muss mindestens 32 Zeichen lang sein.
 - `MAIL_INCLUDE_SEEN=1` berücksichtigt auch bereits gelesene Mails, mit `0` nur `UNSEEN`.
 - Mit `MAIL_DELETE_MATCH=1` werden Treffer nach dem Check gelöscht.
 - Bei gültigem Treffer werden Laufzeitmetriken berechnet:
@@ -243,6 +247,7 @@ Pflicht-/Basiswerte:
 
 - `MAIL_CHECK_JWT_SECRET=<jwt-secret>`
 - `MAIL_CHECK_JWT_MAX_AGE_SECONDS=<max-alter>`
+- `MAIL_CHECK_JWT_SECRET` muss mindestens 32 Zeichen haben.
 
 Optionale Send-Werte (mit Defaults/Fallbacks):
 
