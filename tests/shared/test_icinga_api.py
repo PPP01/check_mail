@@ -1,8 +1,10 @@
 from types import SimpleNamespace
 
 from mail_check_app.shared.icinga_api import (
+    _allow_debug_password_output,
     build_icinga_submit,
     missing_icinga_args,
+    submit_passive_result,
     split_plugin_output_and_perfdata,
 )
 
@@ -16,6 +18,7 @@ def _args() -> SimpleNamespace:
         icinga_service="svc-a",
         icinga_verify_tls=True,
         debug_icinga=False,
+        debug_icinga_show_password=False,
         icinga_dry_run=False,
     )
 
@@ -56,3 +59,51 @@ def test_missing_icinga_args_returns_expected_keys() -> None:
 
     assert "ICINGA_USER/--icinga-user" in missing
     assert "ICINGA_SERVICE/--icinga-service" in missing
+
+
+def test_allow_debug_password_output_requires_flag_and_tty(monkeypatch) -> None:
+    class FakeStdout:
+        def __init__(self, is_tty: bool) -> None:
+            self._is_tty = is_tty
+
+        def isatty(self) -> bool:
+            return self._is_tty
+
+    args = _args()
+    monkeypatch.setattr("mail_check_app.shared.icinga_api.sys.stdout", FakeStdout(True))
+    assert _allow_debug_password_output(args) is False
+
+    args.debug_icinga_show_password = True
+    assert _allow_debug_password_output(args) is True
+
+    monkeypatch.setattr("mail_check_app.shared.icinga_api.sys.stdout", FakeStdout(False))
+    assert _allow_debug_password_output(args) is False
+
+
+def test_submit_passive_result_masks_password_in_debug_curl(monkeypatch, capsys) -> None:
+    args = _args()
+    args.debug_icinga = True
+    args.icinga_dry_run = True
+
+    monkeypatch.setattr("mail_check_app.shared.icinga_api._allow_debug_password_output", lambda _args: False)
+
+    result = submit_passive_result(args, 0, "OK - test")
+
+    captured = capsys.readouterr().out
+    assert result == "dry-run: submit skipped"
+    assert "api:*****" in captured
+    assert "api:pw" not in captured
+
+
+def test_submit_passive_result_shows_password_only_if_explicitly_allowed(monkeypatch, capsys) -> None:
+    args = _args()
+    args.debug_icinga = True
+    args.icinga_dry_run = True
+
+    monkeypatch.setattr("mail_check_app.shared.icinga_api._allow_debug_password_output", lambda _args: True)
+
+    result = submit_passive_result(args, 0, "OK - test")
+
+    captured = capsys.readouterr().out
+    assert result == "dry-run: submit skipped"
+    assert "api:pw" in captured

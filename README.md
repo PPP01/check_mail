@@ -80,6 +80,20 @@ pytest
    MAIL_ACTIVE_CONFIG=config/match_criteria_<profil>.env
    ```
 
+## Sicherheits-Hinweise
+
+- Das Skript nie mit unnötigen Privilegien betreiben (Least Privilege).
+- Für Icinga/Nagios den dedizierten Monitoring-User verwenden, nicht dauerhaft als `root` laufen lassen.
+- Konfigurationsdateien mit Zugangsdaten strikt schützen, insbesondere:
+  - `config/settings.env`
+  - referenzierte Profile in `MAIL_ACTIVE_CONFIG`
+- Empfohlene Rechte setzen:
+  ```bash
+  chown root:nagios config/settings.env
+  chmod 600 config/settings.env
+  ```
+- Gleiches Rechtekonzept für weitere `.env`-Dateien mit Secrets anwenden.
+
 ## Aufruf
 
 ```bash
@@ -198,6 +212,9 @@ Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nic
   `ICINGA_PASSIVE_CHECK=1` (Submit aktiv) oder `0` (kein Submit, nur direkte Ausgabe).
 - Für Debug-Ausgabe des kompletten API-Calls:
   `ICINGA_DEBUG=1`
+- Passwortausgabe im Debug-`curl` nur bei explizitem Opt-in:
+  `ICINGA_DEBUG_SHOW_PASSWORD=1` oder `--debug-icinga-show-password`
+  (wird nur bei TTY wirksam; sonst bleibt `*****`)
 - Für reinen Test ohne echten Submit:
   `ICINGA_DRY_RUN=1` (nur zusammen mit Debug sinnvoll).
 
@@ -333,6 +350,9 @@ Wenn der Exit-Code anderweitig verarbeitet wird:
   `Icinga submit OK - ...`
 - Mit `ICINGA_DEBUG=1` wird ausgegeben:
   Endpoint, JSON-Payload und ein vollständiger `curl`-Befehl zum Nachtesten.
+- Das Passwort im `curl` ist standardmäßig maskiert (`*****`).
+  Klartext nur mit `ICINGA_DEBUG_SHOW_PASSWORD=1`/`--debug-icinga-show-password`
+  und nur wenn ein TTY verwendet wird.
 - Wenn HTTP zwar klappt, aber kein Objekt getroffen wird, kommt jetzt ein
   Fehler (`UNKNOWN - Icinga submit failed: ... no results ...`).
 - Prüfe in dem Fall zuerst:

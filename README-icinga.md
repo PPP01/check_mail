@@ -52,6 +52,20 @@ pip install -r requirements.txt
 cp config/settings.env.example config/settings.env
 ```
 
+### 3.4 Sicherheits-Härtung
+
+- Das Skript nie mit unnötigen Privilegien betreiben.
+- Monitoring-Checks mit einem dedizierten User ausführen; keine dauerhafte Ausführung als `root`.
+- Konfigurationsdateien mit Secrets strikt absichern (`chmod 600`, Owner `root`, Gruppe `nagios`).
+- Beispiel:
+
+```bash
+chown root:nagios /usr/lib/nagios/plugins/check_mail/config/settings.env
+chmod 600 /usr/lib/nagios/plugins/check_mail/config/settings.env
+```
+
+- Dasselbe Rechtekonzept für alle weiteren eingebundenen `.env`-Dateien anwenden.
+
 ## 4. Konfiguration
 
 ### 4.1 Gemeinsame Basis
@@ -135,7 +149,7 @@ Nur nötig, wenn `check` zusätzlich passiv submitten soll:
 - `ICINGA_PASSWORD`
 - `ICINGA_HOST`
 - `ICINGA_SERVICE`
-- optional `ICINGA_VERIFY_TLS`, `ICINGA_DEBUG`, `ICINGA_DRY_RUN`
+- optional `ICINGA_VERIFY_TLS`, `ICINGA_DEBUG`, `ICINGA_DEBUG_SHOW_PASSWORD`, `ICINGA_DRY_RUN`
 
 ## 5. Einrichtung in Icinga2
 

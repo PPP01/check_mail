@@ -2,6 +2,7 @@ import base64
 import json
 import shlex
 import ssl
+import sys
 import urllib.error
 import urllib.request
 from typing import List, Tuple
@@ -42,12 +43,17 @@ def build_icinga_submit(endpoint: str, args, exit_status: int, output: str) -> T
     return payload, headers
 
 
-def build_curl_command(endpoint: str, args, payload: dict) -> str:
+def _allow_debug_password_output(args) -> bool:
+    return bool(getattr(args, "debug_icinga_show_password", False)) and sys.stdout.isatty()
+
+
+def build_curl_command(endpoint: str, args, payload: dict, include_password: bool = False) -> str:
     payload_json = json.dumps(payload, ensure_ascii=False)
     insecure = "--insecure " if not args.icinga_verify_tls else ""
+    shown_password = args.icinga_password if include_password else "*****"
     return (
         f"curl -sS -X POST {insecure}"
-        f"-u {shlex.quote(f'{args.icinga_user}:{args.icinga_password}')} "
+        f"-u {shlex.quote(f'{args.icinga_user}:{shown_password}')} "
         f"-H 'Accept: application/json' "
         f"-H 'Content-Type: application/json' "
         f"{shlex.quote(endpoint)} "
@@ -66,7 +72,10 @@ def submit_passive_result(args, exit_status: int, output: str) -> str:
         print("Icinga plugin_output:", split_output)
         print("Icinga performance_data:", split_perfdata if split_perfdata else "[]")
         print("Icinga payload:", json.dumps(payload, ensure_ascii=False))
-        print("Icinga curl:", build_curl_command(endpoint, args, payload))
+        print(
+            "Icinga curl:",
+            build_curl_command(endpoint, args, payload, include_password=_allow_debug_password_output(args)),
+        )
         if args.icinga_dry_run:
             return "dry-run: submit skipped"
 

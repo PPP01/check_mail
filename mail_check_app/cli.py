@@ -47,6 +47,12 @@ def _add_icinga_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--icinga-verify-tls", action="store_true", default=os.getenv("ICINGA_VERIFY_TLS", "1") == "1")
     parser.add_argument("--debug-icinga", action="store_true", default=env_bool("ICINGA_DEBUG", "MAIL_DEBUG_ICINGA"))
     parser.add_argument(
+        "--debug-icinga-show-password",
+        action="store_true",
+        default=env_bool("ICINGA_DEBUG_SHOW_PASSWORD", "MAIL_DEBUG_ICINGA_SHOW_PASSWORD"),
+        help="Show Icinga password in debug curl output (TTY only).",
+    )
+    parser.add_argument(
         "--icinga-dry-run",
         action="store_true",
         default=env_bool("ICINGA_DRY_RUN", "MAIL_ICINGA_DRY_RUN"),
