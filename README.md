@@ -33,6 +33,24 @@ Zum Verlassen der venv:
 deactivate
 ```
 
+## Sphinx-Dokumentation
+
+Sphinx einmalig installieren:
+
+```bash
+source .venv/bin/activate
+pip install -r requirements-docs.txt
+```
+
+HTML-Dokumentation bauen:
+
+```bash
+sphinx-build -b html docs docs/_build/html
+```
+
+Startseite danach:
+- `docs/_build/html/index.html`
+
 ## Konfiguration
 
 1. Beispiel kopieren:
