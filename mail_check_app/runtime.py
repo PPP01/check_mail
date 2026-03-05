@@ -10,6 +10,7 @@ DEFAULT_ENV_EXAMPLE_PATH = PROJECT_ROOT / "config" / "settings.env.example"
 
 
 def resolve_env_path(value: str) -> Path:
+    """Resolve an absolute or project-relative .env path."""
     raw_path = Path(value)
     if raw_path.is_absolute():
         return raw_path
@@ -45,6 +46,7 @@ def read_env_key(path: Path, key: str) -> str:
 
 
 def load_runtime_env(config_override: str = "", require_active_profile: bool = True) -> str:
+    """Load default, optional override, and active-profile env files in the expected order."""
     load_dotenv(dotenv_path=DEFAULT_ENV_PATH, override=False)
 
     selected_config = config_override.strip() if config_override else ""
@@ -76,6 +78,7 @@ def load_runtime_env(config_override: str = "", require_active_profile: bool = T
 
 
 def ensure_active_profile_required(command: str) -> int:
+    """Validate MAIL_ACTIVE_CONFIG for commands that require mailbox criteria."""
     if command in {"template-config", "send"}:
         return 0
     active_profile = os.getenv("MAIL_ACTIVE_CONFIG", "").strip()

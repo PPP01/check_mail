@@ -17,6 +17,7 @@ def b64url_decode(value: str) -> bytes:
 
 
 def create_mailcheck_jwt(secret: str, issued_at: datetime) -> str:
+    """Create a signed HS256 JWT used to correlate send and receive checks."""
     header = {"alg": "HS256", "typ": "JWT"}
     iat = int(issued_at.timestamp())
     payload = {
@@ -34,6 +35,7 @@ def create_mailcheck_jwt(secret: str, issued_at: datetime) -> str:
 
 
 def verify_mailcheck_jwt(token: str, secret: str, max_age_seconds: int) -> datetime:
+    """Verify signature and age of a mail-check JWT and return its issue time."""
     parts = token.split(".")
     if len(parts) != 3:
         raise RuntimeError("JWT format invalid.")
@@ -74,6 +76,7 @@ def verify_mailcheck_jwt(token: str, secret: str, max_age_seconds: int) -> datet
 
 
 def parse_mailcheck_timestamp(value: str) -> Optional[datetime]:
+    """Parse ISO-like timestamps from headers/body and normalize to UTC."""
     cleaned = value.strip()
     if not cleaned:
         return None

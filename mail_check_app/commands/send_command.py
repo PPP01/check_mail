@@ -11,6 +11,7 @@ from ..shared.jwt_utils import create_mailcheck_jwt
 
 
 def build_send_message(args) -> EmailMessage:
+    """Create the outbound test message including MailCheck JWT metadata."""
     sent_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     jwt_value = create_mailcheck_jwt(args.mail_jwt_secret, datetime.now(timezone.utc))
     body = f"MailCheckJwt: {jwt_value}\nMailCheckSentAt: {sent_at}\n\n{args.send_body}"
@@ -26,6 +27,7 @@ def build_send_message(args) -> EmailMessage:
 
 
 def send_via_sendmail(args, message: EmailMessage) -> None:
+    """Send the message using a local sendmail-compatible command."""
     command = shlex.split(args.sendmail_command)
     if not command:
         raise RuntimeError("MAIL_SEND_SENDMAIL_COMMAND is empty.")
@@ -90,6 +92,7 @@ def send_via_mail_cmd(args) -> None:
 
 
 def send_via_smtp(args, message: EmailMessage) -> None:
+    """Send the message directly via SMTP/SMTPS with optional auth."""
     if not args.smtp_host:
         raise RuntimeError("MAIL_SEND_SMTP_HOST/--smtp-host is required for smtp backend.")
 
@@ -104,6 +107,7 @@ def send_via_smtp(args, message: EmailMessage) -> None:
 
 
 def run_send_command(args) -> int:
+    """Execute the `send` command and print Nagios-compatible output."""
     if not args.mail_jwt_secret:
         print("ERROR - MAIL_CHECK_JWT_SECRET is required for send command.")
         return 3

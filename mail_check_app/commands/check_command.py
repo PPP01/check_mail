@@ -18,6 +18,7 @@ def decode_header_val(value: str) -> str:
 
 
 def find_matching_message_ids(args) -> Tuple[List[bytes], str]:
+    """Search IMAP for messages matching configured criteria and return message IDs."""
     ctx = ssl.create_default_context()
     imap = imaplib.IMAP4_SSL(args.imap_host, args.imap_port, ssl_context=ctx)
     try:
@@ -75,6 +76,7 @@ def extract_body_text(message) -> str:
 
 
 def extract_mailcheck_meta(message) -> Tuple[str, Optional[datetime]]:
+    """Extract MailCheck JWT and send timestamp from headers or fallback body lines."""
     header_token = (message.get("X-Mail-Check-Jwt") or "").strip()
     header_sent_at = (message.get("X-Mail-Check-Sent-At") or "").strip()
     sent_at = parse_mailcheck_timestamp(header_sent_at)
@@ -111,6 +113,7 @@ def extract_received_timestamp(message) -> Optional[datetime]:
 
 
 def collect_valid_matches(args, msg_ids: List[bytes]) -> Tuple[List[bytes], Dict[str, Optional[float]]]:
+    """Validate JWTs for candidate messages and compute delivery timing metrics."""
     if not msg_ids:
         return [], {
             "mail_delivery_seconds": None,
@@ -185,6 +188,7 @@ def collect_valid_matches(args, msg_ids: List[bytes]) -> Tuple[List[bytes], Dict
 
 
 def run_email_check(args) -> Tuple[int, str]:
+    """Run mailbox validation and return plugin exit code plus plugin output string."""
     if not args.mail_jwt_secret:
         return 3, "UNKNOWN - MAIL_CHECK_JWT_SECRET is required for mail validation."
 
@@ -234,6 +238,7 @@ def run_email_check(args) -> Tuple[int, str]:
 
 
 def run_check_command(args) -> int:
+    """Run `check` and optionally submit the result as passive check to Icinga."""
     exit_code, output = run_email_check(args)
     if args.no_icinga_submit or not args.icinga_passive_check:
         print(output)

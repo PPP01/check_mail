@@ -23,6 +23,7 @@ def split_plugin_output_and_perfdata(output: str) -> Tuple[str, List[str]]:
 
 
 def build_icinga_submit(endpoint: str, args, exit_status: int, output: str) -> Tuple[dict, dict]:
+    """Build JSON payload and HTTP headers for Icinga process-check-result API."""
     plugin_output, performance_data = split_plugin_output_and_perfdata(output)
     payload = {
         "type": "Service",
@@ -55,6 +56,7 @@ def build_curl_command(endpoint: str, args, payload: dict) -> str:
 
 
 def submit_passive_result(args, exit_status: int, output: str) -> str:
+    """Submit a passive result to Icinga and return API status text."""
     endpoint = args.icinga_url.rstrip("/") + "/v1/actions/process-check-result"
     payload, headers = build_icinga_submit(endpoint, args, exit_status, output)
 
@@ -105,6 +107,7 @@ def submit_passive_result(args, exit_status: int, output: str) -> str:
 
 
 def missing_icinga_args(args) -> List[str]:
+    """Return missing mandatory Icinga argument names for actionable error output."""
     missing: List[str] = []
     if not args.icinga_url:
         missing.append("ICINGA_URL/--icinga-url")

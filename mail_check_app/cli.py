@@ -12,6 +12,7 @@ def build_cron_line(
     python_executable: str = "",
     script_path: str = "",
 ) -> str:
+    """Build a cron entry for periodic `check` execution with log redirection."""
     python_path = Path(python_executable) if python_executable else Path(sys.executable)
     script = Path(script_path) if script_path else Path(__file__).resolve()
     return f"{schedule} {python_path} {script} check >> {log_file} 2>&1"
@@ -110,6 +111,7 @@ def _add_send_args(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the complete CLI parser with all supported subcommands."""
     parser = argparse.ArgumentParser(
         description=(
             "Mail heartbeat check with optional Icinga2 passive submit via subcommands. "

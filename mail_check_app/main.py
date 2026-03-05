@@ -18,6 +18,7 @@ def _detect_requested_command(tokens: Sequence[str]) -> str:
 
 
 def main(argv: Optional[Sequence[str]] = None, script_path: Optional[Path] = None) -> int:
+    """Parse CLI input, lazy-load the selected command handler, and return its exit code."""
     cli_args = list(argv) if argv is not None else sys.argv[1:]
 
     bootstrap = argparse.ArgumentParser(add_help=False)

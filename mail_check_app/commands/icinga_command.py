@@ -2,6 +2,7 @@ from ..shared.icinga_api import missing_icinga_args, submit_passive_result
 
 
 def run_icinga_command(args) -> int:
+    """Submit a synthetic test result to Icinga and return plugin-style exit code."""
     missing = missing_icinga_args(args)
     if missing:
         print(f"UNKNOWN - Icinga settings missing: {', '.join(missing)}")

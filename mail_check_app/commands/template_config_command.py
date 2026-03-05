@@ -32,6 +32,7 @@ def extract_body_text(message) -> str:
 
 
 def parse_template_sections(path: str) -> Tuple[Dict[str, str], List[str]]:
+    """Parse mail template into headers/body, with MIME-aware body fallback parsing."""
     headers: Dict[str, str] = {}
     body_lines: List[str] = []
     current_name = ""
@@ -201,6 +202,7 @@ def path_for_env_reference(path: Path) -> str:
 
 
 def build_match_criteria_values(raw_headers: Dict[str, str], body_lines: List[str]) -> Dict[str, str]:
+    """Map parsed template content to MAIL_*_CONTAINS criteria values."""
     subject = get_header_case_insensitive(raw_headers, "Subject").strip()
     from_header = get_header_case_insensitive(raw_headers, "From").strip()
     from_contains = extract_email(from_header) if from_header else ""
@@ -216,6 +218,7 @@ def build_match_criteria_values(raw_headers: Dict[str, str], body_lines: List[st
 
 
 def write_new_full_settings_from_example(target_path: Path, active_profile: str) -> None:
+    """Create a full settings file from example and set MAIL_ACTIVE_CONFIG accordingly."""
     if not DEFAULT_ENV_EXAMPLE_PATH.exists():
         raise RuntimeError(f"settings example not found: {DEFAULT_ENV_EXAMPLE_PATH}")
     lines = DEFAULT_ENV_EXAMPLE_PATH.read_text(encoding="utf-8").splitlines()
@@ -241,6 +244,7 @@ def write_new_full_settings_from_example(target_path: Path, active_profile: str)
 
 
 def run_template_config_command(args) -> int:
+    """Generate match-criteria config (and optional full config) from a mail template."""
     template_path = resolve_env_path(args.template_file)
     if not template_path.exists():
         print(f"ERROR - template file not found: {args.template_file} (resolved: {template_path})")
