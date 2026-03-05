@@ -4,7 +4,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   push:
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
