@@ -12,3 +12,6 @@ __pycache__/
 
 # Sphinx build output
 docs/_build/
+
+# Lokale Workflow-Notizen
+docs/github-workflow-solo.md
