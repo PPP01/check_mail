@@ -17,6 +17,18 @@ def _detect_requested_command(tokens: Sequence[str]) -> str:
     return ""
 
 
+def _extract_log_dir_from_cron_line(cron_line: str) -> str:
+    marker = ">> "
+    redirect_idx = cron_line.find(marker)
+    if redirect_idx < 0:
+        return ""
+    tail = cron_line[redirect_idx + len(marker):]
+    log_file = tail.split(" 2>&1", 1)[0].strip()
+    if not log_file:
+        return ""
+    return str(Path(log_file).parent)
+
+
 def main(argv: Optional[Sequence[str]] = None, script_path: Optional[Path] = None) -> int:
     """Parse CLI input, lazy-load the selected command handler, and return its exit code."""
     cli_args = list(argv) if argv is not None else sys.argv[1:]
@@ -44,7 +56,11 @@ def main(argv: Optional[Sequence[str]] = None, script_path: Optional[Path] = Non
 
     if args.print_cron_line:
         effective_script = str(script_path) if script_path else str(Path(__file__).resolve())
-        print(build_cron_line(script_path=effective_script))
+        cron_line = build_cron_line(script_path=effective_script)
+        print(cron_line)
+        log_dir = _extract_log_dir_from_cron_line(cron_line)
+        if log_dir:
+            print(f"HINWEIS - Log-Ordner bei Bedarf anlegen: mkdir -p {log_dir}")
         return 0
 
     if not args.command:

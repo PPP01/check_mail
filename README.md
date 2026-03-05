@@ -146,6 +146,8 @@ Cron-Zeile mit aktuellen Pfaden automatisch ausgeben:
 .venv/bin/python ./mail_check.py --print-cron-line
 ```
 
+Der Aufruf gibt zusätzlich einen Hinweis aus, falls der Log-Ordner noch angelegt werden muss.
+
 ```cron
 */5 * * * * /path/to/check_emails/.venv/bin/python /path/to/check_emails/mail_check.py check >> /var/log/check_mail/mail_check.log 2>&1
 ```

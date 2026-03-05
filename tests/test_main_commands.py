@@ -69,3 +69,24 @@ def test_main_dispatches_template_config_command(monkeypatch) -> None:
     rc = main_module.main(["template-config"])
 
     assert rc == 15
+
+
+def test_main_print_cron_line_prints_log_dir_hint(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(main_module, "load_runtime_env", lambda **_: "")
+    monkeypatch.setattr(
+        main_module,
+        "build_parser",
+        lambda: _FakeParser(Namespace(print_cron_line=True, command="")),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "build_cron_line",
+        lambda **_: "*/5 * * * * /venv/python /app/mail_check.py check >> /opt/app/log/mail_check.log 2>&1",
+    )
+
+    rc = main_module.main(["--print-cron-line"])
+
+    captured = capsys.readouterr().out
+    assert rc == 0
+    assert "/opt/app/log/mail_check.log" in captured
+    assert "mkdir -p /opt/app/log" in captured
