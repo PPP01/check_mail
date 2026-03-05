@@ -1,12 +1,31 @@
 # Mail Heartbeat Check + Icinga2 Passive Check
 
-Dieses Projekt enthält ein Skript, das:
+**check_mail** ist ein Monitoring-Script zur **operativen Überwachung des E-Mail-Versands – vom Versand bis zum Empfang**.
 
-1. per IMAP ein Postfach abfragt,
-2. auf eine erwartete Mail prüft,
-3. die Treffer optional löscht,
-4. das Ergebnis optional als passiven Service-Check an Icinga2 meldet,
-5. optional eine Testmail über `sendmail`, `mail` oder `smtp` versendet.
+Es wird eingesetzt, um sicherzustellen, dass eine E-Mail, die ein System versendet (z. B. Anwendung, Job, Alarmierung), **tatsächlich am Zielpostfach ankommt**. Dazu versendet das Script (oder ein angebundenes System) eine definierte Test-Mail und prüft anschließend per IMAP, ob diese Mail innerhalb eines erwarteten Zeitfensters im Postfach vorhanden ist.
+
+Im Unterschied zu einem einfachen **Unit-Test** (der typischerweise nur Logik oder Mock-Schnittstellen prüft) validiert `check_mail` den **realen End-to-End Mailflow**: Es werden **echte E-Mails** über die produktiv genutzte Versandstrecke verschickt und anschließend im **realen Zielpostfach** wiedergefunden – inklusive aller beteiligten Systeme (SMTP, Queueing, Relays, Spamfilter, Postfach/IMAP).
+
+Das Script ist für den Einsatz als **Icinga2/Nagios-Plugin** vorgesehen und liefert die passenden **Exitcodes und Ausgaben** für Monitoring-Checks. Zusätzlich unterstützt es **passive Checks** in Icinga2 (z. B. über die Icinga2 API), um Check-Ergebnisse aktiv an Icinga zu melden.
+
+### Voraussetzungen: Reales Postfach / Test-Adresse
+
+Für den Einsatz von `check_mail` wird ein **reales, erreichbares Postfach** benötigt, da das Script den **echten Versand und Empfang** von E-Mails (End-to-End) prüft. 
+
+Empfohlen wird dafür eine **dedizierte Test-E-Mail-Adresse** bzw. ein **separates Test-Postfach**, z. B.:
+
+* `monitoring-mailcheck@…`
+* `test@…`
+
+Vorteile einer eigenen Test-Adresse:
+
+* keine Kollisionen mit echten Benutzer-Mails
+* klare Filter-/Suchkriterien (Betreff/Marker), weniger Fehlalarme
+* saubere Berechtigungen und einfache Rotation von Zugangsdaten
+* nachvollziehbare Historie (und optional automatisches Aufräumen)
+
+Wichtig ist, dass das Postfach **per IMAP erreichbar** ist und die Zugangsdaten konfiguriert werden (s. Konfiguration).
+
 
 ## Script
 
