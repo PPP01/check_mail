@@ -85,6 +85,20 @@ Tests ausführen:
 pytest
 ```
 
+## Zusammenarbeit mit GitHub
+
+Der empfohlene Team-Workflow ist in `CONTRIBUTING.md` beschrieben:
+
+- Branch-Strategie (`feat/...`, `fix/...`, `docs/...`, `chore/...`)
+- Commit-Regeln (Deutsch, kleine logische Einheiten)
+- Pull-Request- und Review-Regeln
+- Merge-Strategie (bevorzugt Squash Merge)
+
+Zusätzlich gelten im Repo:
+
+- PR-Template: `.github/pull_request_template.md`
+- CI-Workflow (Tests mit GitHub Actions): `.github/workflows/ci.yml`
+
 ## Konfiguration
 
 1. Beispiel kopieren:
