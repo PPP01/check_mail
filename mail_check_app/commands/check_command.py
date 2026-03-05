@@ -176,7 +176,8 @@ def collect_valid_matches(args, msg_ids: List[bytes]) -> Tuple[List[bytes], Dict
         if args.delete_match and valid_ids:
             for valid_id in valid_ids:
                 imap.store(valid_id, "+FLAGS", "\\Deleted")
-            imap.expunge()
+            if not getattr(args, "soft_delete_match", False):
+                imap.expunge()
 
         return valid_ids, metrics
     finally:

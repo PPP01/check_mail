@@ -1,6 +1,9 @@
+from datetime import datetime, timezone
+from email.message import EmailMessage
 from types import SimpleNamespace
 
-from mail_check_app.commands.check_command import run_check_command, run_email_check
+from mail_check_app.commands.check_command import collect_valid_matches, run_check_command, run_email_check
+from mail_check_app.shared.jwt_utils import create_mailcheck_jwt
 
 
 def _args() -> SimpleNamespace:
@@ -70,3 +73,70 @@ def test_run_check_command_submits_to_icinga_on_success(monkeypatch, capsys) -> 
     assert rc == 0
     assert "Icinga submit OK - submitted" in captured
     assert "OK - mail found" in captured
+
+
+def test_collect_valid_matches_expunge_depends_on_soft_delete_flag(monkeypatch) -> None:
+    secret = "x" * 32
+    token = create_mailcheck_jwt(secret, datetime.now(timezone.utc))
+    message = EmailMessage()
+    message["X-Mail-Check-Jwt"] = token
+    message.set_content("body")
+    raw_message = message.as_bytes()
+
+    class FakeImap:
+        def __init__(self) -> None:
+            self.stored = []
+            self.expunge_calls = 0
+
+        def login(self, *_args):
+            return "OK", []
+
+        def select(self, _mailbox):
+            return "OK", []
+
+        def fetch(self, _msg_id, _what):
+            return "OK", [(b"1 (RFC822)", raw_message)]
+
+        def store(self, msg_id, action, flag):
+            self.stored.append((msg_id, action, flag))
+            return "OK", []
+
+        def expunge(self):
+            self.expunge_calls += 1
+            return "OK", []
+
+        def close(self):
+            return "OK", []
+
+        def logout(self):
+            return "BYE", []
+
+    def _run_with_soft_delete(soft_delete: bool):
+        fake_imap = FakeImap()
+        monkeypatch.setattr(
+            "mail_check_app.commands.check_command.imaplib.IMAP4_SSL",
+            lambda *_args, **_kwargs: fake_imap,
+        )
+        args = SimpleNamespace(
+            imap_host="imap.example.net",
+            imap_port=993,
+            imap_user="user",
+            imap_password="pw",
+            mailbox="INBOX",
+            mail_jwt_secret=secret,
+            mail_jwt_max_age_seconds=60,
+            delete_match=True,
+            soft_delete_match=soft_delete,
+        )
+        valid_ids, _metrics = collect_valid_matches(args, [b"1"])
+        return fake_imap, valid_ids
+
+    hard_delete_imap, hard_valid_ids = _run_with_soft_delete(False)
+    assert hard_valid_ids == [b"1"]
+    assert hard_delete_imap.stored == [(b"1", "+FLAGS", "\\Deleted")]
+    assert hard_delete_imap.expunge_calls == 1
+
+    soft_delete_imap, soft_valid_ids = _run_with_soft_delete(True)
+    assert soft_valid_ids == [b"1"]
+    assert soft_delete_imap.stored == [(b"1", "+FLAGS", "\\Deleted")]
+    assert soft_delete_imap.expunge_calls == 0

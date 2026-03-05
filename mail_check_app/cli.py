@@ -36,6 +36,12 @@ def _add_mail_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--include-seen", action="store_true", default=os.getenv("MAIL_INCLUDE_SEEN", "0") == "1")
     parser.add_argument("--delete-match", action="store_true", default=os.getenv("MAIL_DELETE_MATCH", "0") == "1")
+    parser.add_argument(
+        "--soft-delete-match",
+        action="store_true",
+        default=os.getenv("MAIL_SOFT_DELETE_MATCH", "0") == "1",
+        help="With --delete-match: mark as deleted only, skip EXPUNGE.",
+    )
 
 
 def _add_icinga_args(parser: argparse.ArgumentParser) -> None:

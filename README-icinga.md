@@ -140,6 +140,7 @@ Optionale Empfangssteuerung:
 
 - `MAIL_INCLUDE_SEEN=1`
 - `MAIL_DELETE_MATCH=1`
+- `MAIL_SOFT_DELETE_MATCH=1` (nur markieren, ohne `EXPUNGE`; nur zusammen mit `MAIL_DELETE_MATCH=1`)
 
 ### 4.4 Passive API-Konfiguration (nur wenn benötigt)
 

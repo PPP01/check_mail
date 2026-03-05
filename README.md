@@ -204,6 +204,7 @@ Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nic
 - `MAIL_CHECK_JWT_SECRET` muss mindestens 32 Zeichen lang sein.
 - `MAIL_INCLUDE_SEEN=1` berücksichtigt auch bereits gelesene Mails, mit `0` nur `UNSEEN`.
 - Mit `MAIL_DELETE_MATCH=1` werden Treffer nach dem Check gelöscht.
+- Mit `MAIL_SOFT_DELETE_MATCH=1` (zusammen mit `MAIL_DELETE_MATCH=1`) werden Treffer nur als gelöscht markiert, aber nicht direkt expunged.
 - Bei gültigem Treffer werden Laufzeitmetriken berechnet:
   `send_to_delivery_seconds` (Versand bis Zustellung),
   `delivery_to_check_seconds` (Zustellung bis Check) und
