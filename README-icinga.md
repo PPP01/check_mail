@@ -153,6 +153,13 @@ Nur nötig, wenn `check` zusätzlich passiv submitten soll:
 - `ICINGA_SERVICE`
 - optional `ICINGA_VERIFY_TLS`, `ICINGA_DEBUG`, `ICINGA_DEBUG_SHOW_PASSWORD`, `ICINGA_DRY_RUN`
 
+**Sicherheitswarnung zu `ICINGA_VERIFY_TLS=0`**
+
+- `ICINGA_VERIFY_TLS=0` schaltet die Zertifikatsprüfung ab und ist unsicher.
+- Nur kurzfristig in isolierten Testumgebungen verwenden, nicht im Regelbetrieb.
+- Für Produktion immer `ICINGA_VERIFY_TLS=1` setzen.
+- Bei TLS-Fehlern die Zertifikatskette sauber beheben (CA/Truststore), nicht dauerhaft auf `0` bleiben.
+
 ## 5. Einrichtung in Icinga2
 
 ### 5.1 CheckCommand-Objekte

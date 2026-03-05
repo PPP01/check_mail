@@ -226,6 +226,14 @@ Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nic
 - Für reinen Test ohne echten Submit:
   `ICINGA_DRY_RUN=1` (nur zusammen mit Debug sinnvoll).
 
+**WICHTIG zu `ICINGA_VERIFY_TLS=0`**
+
+- `ICINGA_VERIFY_TLS=0` deaktiviert die TLS-Zertifikatsprüfung für die Icinga-API.
+- Das ist unsicher und nur für kurzfristige Fehlersuche in isolierten Testumgebungen gedacht.
+- Risiken: Man-in-the-Middle-Angriffe, unbemerkte Verbindung zu einem falschen Endpoint, mögliche Preisgabe von Zugangsdaten.
+- Für produktive Umgebungen immer `ICINGA_VERIFY_TLS=1` verwenden.
+- Falls Zertifikatsfehler auftreten: CA-Kette/Zertifikat auf dem ausführenden System korrekt installieren statt TLS-Prüfung abzuschalten.
+
 ## Mail-Versand-Konfiguration (`send`)
 
 Der Command `send` prüft den realen Versandweg einer Anwendung. Unterstützte Wege:
