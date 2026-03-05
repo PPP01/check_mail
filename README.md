@@ -51,6 +51,21 @@ sphinx-build -b html docs docs/_build/html
 Startseite danach:
 - `docs/_build/html/index.html`
 
+## Unit-Tests
+
+Test-Abhängigkeiten installieren:
+
+```bash
+source .venv/bin/activate
+pip install -r requirements-test.txt
+```
+
+Tests ausführen:
+
+```bash
+pytest
+```
+
 ## Konfiguration
 
 1. Beispiel kopieren:
