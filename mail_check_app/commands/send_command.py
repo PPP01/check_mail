@@ -96,9 +96,17 @@ def send_via_smtp(args, message: EmailMessage) -> None:
     if not args.smtp_host:
         raise RuntimeError("MAIL_SEND_SMTP_HOST/--smtp-host is required for smtp backend.")
 
+    if args.smtp_verify_tls:
+        context = ssl.create_default_context()
+    else:
+        context = ssl._create_unverified_context()
+
+    smtp_kwargs = {"timeout": 15}
+    if args.smtp_ssl:
+        smtp_kwargs["context"] = context
+
     smtp_cls = smtplib.SMTP_SSL if args.smtp_ssl else smtplib.SMTP
-    context = ssl.create_default_context()
-    with smtp_cls(args.smtp_host, args.smtp_port, timeout=15) as client:
+    with smtp_cls(args.smtp_host, args.smtp_port, **smtp_kwargs) as client:
         if not args.smtp_ssl and args.smtp_starttls:
             client.starttls(context=context)
         if args.smtp_user:
