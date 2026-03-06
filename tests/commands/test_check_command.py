@@ -31,7 +31,7 @@ def test_run_email_check_rejects_short_jwt_secret() -> None:
     rc, output = run_email_check(args)
 
     assert rc == 3
-    assert "at least 32 characters" in output
+    assert "mindestens 32 Zeichen" in output
 
 
 def test_run_check_command_without_submit_returns_email_result(monkeypatch, capsys) -> None:
@@ -77,7 +77,7 @@ def test_run_check_command_submits_to_icinga_on_success(monkeypatch, capsys) -> 
 
 def test_collect_valid_matches_expunge_depends_on_soft_delete_flag(monkeypatch) -> None:
     secret = "x" * 32
-    token = create_mailcheck_jwt(secret, datetime.now(timezone.utc))
+    token = create_mailcheck_jwt(secret, datetime.now(timezone.utc), max_age_seconds=60)
     message = EmailMessage()
     message["X-Mail-Check-Jwt"] = token
     message.set_content("body")
@@ -140,7 +140,7 @@ def test_collect_valid_matches_expunge_depends_on_soft_delete_flag(monkeypatch) 
 
 def test_run_email_check_uses_single_connection(monkeypatch) -> None:
     secret = "x" * 32
-    token = create_mailcheck_jwt(secret, datetime.now(timezone.utc))
+    token = create_mailcheck_jwt(secret, datetime.now(timezone.utc), max_age_seconds=60)
     message = EmailMessage()
     message["X-Mail-Check-Jwt"] = token
     message.set_content("body")

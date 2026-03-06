@@ -14,26 +14,28 @@ MIN_JWT_SECRET_LENGTH = 32
 def validate_mailcheck_secret(secret: str) -> None:
     if len(secret) < MIN_JWT_SECRET_LENGTH:
         raise RuntimeError(
-            f"MAIL_CHECK_JWT_SECRET must be at least {MIN_JWT_SECRET_LENGTH} characters long."
+            f"MAIL_CHECK_JWT_SECRET muss mindestens {MIN_JWT_SECRET_LENGTH} Zeichen lang sein."
         )
 
 
-def create_mailcheck_jwt(secret: str, issued_at: datetime) -> str:
-    """Create a signed HS256 JWT used to correlate send and receive checks."""
+def create_mailcheck_jwt(secret: str, issued_at: datetime, max_age_seconds: int) -> str:
+    """Erstellt ein signiertes HS256-JWT zur Korrelation von Sende- und Empfangsprüfungen."""
     validate_mailcheck_secret(secret)
     iat = int(issued_at.timestamp())
+    exp = iat + max(1, max_age_seconds)
     payload = {
         "iss": JWT_ISSUER,
         "sub": JWT_SUBJECT,
         "iat": iat,
+        "exp": exp,
         "jti": secrets.token_hex(12),
     }
     token = jwt.encode(payload, secret, algorithm="HS256", headers={"typ": "JWT"})
     return token if isinstance(token, str) else token.decode("utf-8")
 
 
-def verify_mailcheck_jwt(token: str, secret: str, max_age_seconds: int) -> datetime:
-    """Verify signature and age of a mail-check JWT and return its issue time."""
+def verify_mailcheck_jwt(token: str, secret: str) -> datetime:
+    """Verifiziert Signatur und Ablauf eines JWTs und gibt den Erstellungszeitpunkt zurück."""
     validate_mailcheck_secret(secret)
     try:
         payload = jwt.decode(
@@ -41,46 +43,37 @@ def verify_mailcheck_jwt(token: str, secret: str, max_age_seconds: int) -> datet
             secret,
             algorithms=["HS256"],
             options={
-                "require": ["iat", "iss", "sub"],
-                "verify_exp": False,
+                "require": ["iat", "iss", "sub", "exp"],
+                "verify_exp": True,
             },
             issuer=JWT_ISSUER,
         )
     except ExpiredSignatureError as exc:
-        raise RuntimeError("JWT expired.") from exc
+        raise RuntimeError("JWT ist abgelaufen.") from exc
     except InvalidSignatureError as exc:
-        raise RuntimeError("JWT signature invalid.") from exc
+        raise RuntimeError("JWT-Signatur ist ungültig.") from exc
     except InvalidAlgorithmError as exc:
-        raise RuntimeError("JWT algorithm not supported.") from exc
+        raise RuntimeError("JWT-Algorithmus wird nicht unterstützt.") from exc
     except DecodeError as exc:
-        raise RuntimeError("JWT payload invalid.") from exc
+        raise RuntimeError("JWT-Payload ist ungültig.") from exc
     except jwt.InvalidTokenError as exc:
-        raise RuntimeError(f"JWT invalid: {exc}") from exc
+        raise RuntimeError(f"JWT ist ungültig: {exc}") from exc
 
     if payload.get("sub") != JWT_SUBJECT:
-        raise RuntimeError("JWT subject invalid.")
+        raise RuntimeError("JWT-Betreff ist ungültig.")
 
     iat = payload.get("iat")
     if not isinstance(iat, int):
-        raise RuntimeError("JWT iat claim missing.")
+        raise RuntimeError("JWT-iat-Claim fehlt.")
 
     try:
-        issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
+        return datetime.fromtimestamp(iat, tz=timezone.utc)
     except Exception as exc:
-        raise RuntimeError("JWT iat claim invalid.") from exc
-    now_utc = datetime.now(timezone.utc)
-    max_age = max(1, max_age_seconds)
-    age = (now_utc - issued_at).total_seconds()
-    if age < 0:
-        raise RuntimeError("JWT iat is in the future.")
-    if age > max_age:
-        raise RuntimeError("JWT expired.")
-
-    return issued_at
+        raise RuntimeError("JWT-iat-Claim ist ungültig.") from exc
 
 
 def parse_mailcheck_timestamp(value: str) -> Optional[datetime]:
-    """Parse ISO-like timestamps from headers/body and normalize to UTC."""
+    """Parst ISO-ähnliche Zeitstempel aus Headern/Body und normalisiert auf UTC."""
     cleaned = value.strip()
     if not cleaned:
         return None

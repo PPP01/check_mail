@@ -13,7 +13,7 @@ from ..shared.jwt_utils import create_mailcheck_jwt, validate_mailcheck_secret
 def build_send_message(args) -> EmailMessage:
     """Create the outbound test message including MailCheck JWT metadata."""
     sent_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    jwt_value = create_mailcheck_jwt(args.mail_jwt_secret, datetime.now(timezone.utc))
+    jwt_value = create_mailcheck_jwt(args.mail_jwt_secret, datetime.now(timezone.utc), args.mail_jwt_max_age_seconds)
     body = f"MailCheckJwt: {jwt_value}\nMailCheckSentAt: {sent_at}\n\n{args.send_body}"
 
     message = EmailMessage()
@@ -68,7 +68,7 @@ def send_via_sendmail(args, message: EmailMessage) -> None:
 
 def send_via_mail_cmd(args) -> None:
     sent_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    jwt_value = create_mailcheck_jwt(args.mail_jwt_secret, datetime.now(timezone.utc))
+    jwt_value = create_mailcheck_jwt(args.mail_jwt_secret, datetime.now(timezone.utc), args.mail_jwt_max_age_seconds)
     body = f"MailCheckJwt: {jwt_value}\nMailCheckSentAt: {sent_at}\n\n{args.send_body}"
 
     command = shlex.split(args.mail_command)

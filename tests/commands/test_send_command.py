@@ -6,6 +6,7 @@ from mail_check_app.commands.send_command import run_send_command
 def _args() -> SimpleNamespace:
     return SimpleNamespace(
         mail_jwt_secret="x" * 32,
+        mail_jwt_max_age_seconds=86400,
         send_to="to@example.net",
         send_from="from@example.net",
         send_backend="sendmail",
@@ -41,7 +42,7 @@ def test_run_send_command_rejects_short_jwt_secret(capsys) -> None:
 
     captured = capsys.readouterr().out
     assert rc == 3
-    assert "at least 32 characters" in captured
+    assert "mindestens 32 Zeichen" in captured
 
 
 def test_run_send_command_sendmail_success(monkeypatch, capsys) -> None:
