@@ -17,40 +17,30 @@ def decode_header_val(value: str) -> str:
     return f'"{escaped}"'
 
 
-def find_matching_message_ids(args) -> Tuple[List[bytes], str]:
+def find_matching_message_ids(args, imap: imaplib.IMAP4_SSL) -> Tuple[List[bytes], str]:
     """Search IMAP for messages matching configured criteria and return message IDs."""
-    ctx = ssl.create_default_context()
-    imap = imaplib.IMAP4_SSL(args.imap_host, args.imap_port, ssl_context=ctx)
-    try:
-        imap.login(args.imap_user, args.imap_password)
-        status, _ = imap.select(args.mailbox)
-        if status != "OK":
-            raise RuntimeError(f"Cannot select mailbox {args.mailbox!r}")
+    status, _ = imap.select(args.mailbox)
+    if status != "OK":
+        raise RuntimeError(f"Cannot select mailbox {args.mailbox!r}")
 
-        criteria: List[str] = []
-        if not args.include_seen:
-            criteria.append("UNSEEN")
-        if args.subject_contains:
-            criteria.extend(["HEADER", "Subject", decode_header_val(args.subject_contains)])
-        if args.from_contains:
-            criteria.extend(["HEADER", "From", decode_header_val(args.from_contains)])
-        if args.body_contains:
-            criteria.extend(["BODY", decode_header_val(args.body_contains)])
-        if not criteria:
-            criteria = ["ALL"]
+    criteria: List[str] = []
+    if not args.include_seen:
+        criteria.append("UNSEEN")
+    if args.subject_contains:
+        criteria.extend(["HEADER", "Subject", decode_header_val(args.subject_contains)])
+    if args.from_contains:
+        criteria.extend(["HEADER", "From", decode_header_val(args.from_contains)])
+    if args.body_contains:
+        criteria.extend(["BODY", decode_header_val(args.body_contains)])
+    if not criteria:
+        criteria = ["ALL"]
 
-        status, data = imap.search(None, *criteria)
-        if status != "OK":
-            raise RuntimeError("IMAP SEARCH failed")
+    status, data = imap.search(None, *criteria)
+    if status != "OK":
+        raise RuntimeError("IMAP SEARCH failed")
 
-        msg_ids = data[0].split() if data and data[0] else []
-        return msg_ids, " ".join(criteria)
-    finally:
-        try:
-            imap.close()
-        except Exception:
-            pass
-        imap.logout()
+    msg_ids = data[0].split() if data and data[0] else []
+    return msg_ids, " ".join(criteria)
 
 
 def extract_body_text(message) -> str:
@@ -112,7 +102,9 @@ def extract_received_timestamp(message) -> Optional[datetime]:
     return None
 
 
-def collect_valid_matches(args, msg_ids: List[bytes]) -> Tuple[List[bytes], Dict[str, Optional[float]]]:
+def collect_valid_matches(
+    args, imap: imaplib.IMAP4_SSL, msg_ids: List[bytes]
+) -> Tuple[List[bytes], Dict[str, Optional[float]]]:
     """Validate JWTs for candidate messages and compute delivery timing metrics."""
     if not msg_ids:
         return [], {
@@ -121,8 +113,6 @@ def collect_valid_matches(args, msg_ids: List[bytes]) -> Tuple[List[bytes], Dict
             "delivery_to_check_seconds": None,
         }
 
-    ctx = ssl.create_default_context()
-    imap = imaplib.IMAP4_SSL(args.imap_host, args.imap_port, ssl_context=ctx)
     now_utc = datetime.now(timezone.utc)
     valid_ids: List[bytes] = []
     metrics: Dict[str, Optional[float]] = {
@@ -131,61 +121,53 @@ def collect_valid_matches(args, msg_ids: List[bytes]) -> Tuple[List[bytes], Dict
         "delivery_to_check_seconds": None,
     }
 
-    try:
-        imap.login(args.imap_user, args.imap_password)
-        status, _ = imap.select(args.mailbox)
-        if status != "OK":
-            raise RuntimeError(f"Cannot select mailbox {args.mailbox!r}")
+    status, _ = imap.select(args.mailbox)
+    if status != "OK":
+        raise RuntimeError(f"Cannot select mailbox {args.mailbox!r}")
 
-        for msg_id in reversed(msg_ids):
-            fetch_status, fetch_data = imap.fetch(msg_id, "(RFC822)")
-            if fetch_status != "OK" or not fetch_data:
-                continue
+    for msg_id in reversed(msg_ids):
+        fetch_status, fetch_data = imap.fetch(msg_id, "(RFC822)")
+        if fetch_status != "OK" or not fetch_data:
+            continue
 
-            raw_email = b""
-            for chunk in fetch_data:
-                if isinstance(chunk, tuple) and len(chunk) > 1 and isinstance(chunk[1], (bytes, bytearray)):
-                    raw_email = bytes(chunk[1])
-                    break
-            if not raw_email:
-                continue
+        raw_email = b""
+        for chunk in fetch_data:
+            if isinstance(chunk, tuple) and len(chunk) > 1 and isinstance(chunk[1], (bytes, bytearray)):
+                raw_email = bytes(chunk[1])
+                break
+        if not raw_email:
+            continue
 
-            message = BytesParser(policy=policy.default).parsebytes(raw_email)
-            message_token, _ = extract_mailcheck_meta(message)
-            try:
-                jwt_issued_at = verify_mailcheck_jwt(
-                    token=message_token,
-                    secret=args.mail_jwt_secret,
-                    max_age_seconds=args.mail_jwt_max_age_seconds,
-                )
-            except RuntimeError:
-                continue
-
-            valid_ids.append(msg_id)
-            if metrics["mail_delivery_seconds"] is None:
-                received_at = extract_received_timestamp(message)
-                end_to_end = max(0.0, (now_utc - jwt_issued_at).total_seconds())
-                metrics["mail_delivery_seconds"] = end_to_end
-
-                if received_at:
-                    send_to_delivery = max(0.0, (received_at - jwt_issued_at).total_seconds())
-                    delivery_to_check = max(0.0, (now_utc - received_at).total_seconds())
-                    metrics["send_to_delivery_seconds"] = send_to_delivery
-                    metrics["delivery_to_check_seconds"] = delivery_to_check
-
-        if args.delete_match and valid_ids:
-            for valid_id in valid_ids:
-                imap.store(valid_id, "+FLAGS", "\\Deleted")
-            if not getattr(args, "soft_delete_match", False):
-                imap.expunge()
-
-        return valid_ids, metrics
-    finally:
+        message = BytesParser(policy=policy.default).parsebytes(raw_email)
+        message_token, _ = extract_mailcheck_meta(message)
         try:
-            imap.close()
-        except Exception:
-            pass
-        imap.logout()
+            jwt_issued_at = verify_mailcheck_jwt(
+                token=message_token,
+                secret=args.mail_jwt_secret,
+                max_age_seconds=args.mail_jwt_max_age_seconds,
+            )
+        except RuntimeError:
+            continue
+
+        valid_ids.append(msg_id)
+        if metrics["mail_delivery_seconds"] is None:
+            received_at = extract_received_timestamp(message)
+            end_to_end = max(0.0, (now_utc - jwt_issued_at).total_seconds())
+            metrics["mail_delivery_seconds"] = end_to_end
+
+            if received_at:
+                send_to_delivery = max(0.0, (received_at - jwt_issued_at).total_seconds())
+                delivery_to_check = max(0.0, (now_utc - received_at).total_seconds())
+                metrics["send_to_delivery_seconds"] = send_to_delivery
+                metrics["delivery_to_check_seconds"] = delivery_to_check
+
+    if args.delete_match and valid_ids:
+        for valid_id in valid_ids:
+            imap.store(valid_id, "+FLAGS", "\\Deleted")
+        if not getattr(args, "soft_delete_match", False):
+            imap.expunge()
+
+    return valid_ids, metrics
 
 
 def run_email_check(args) -> Tuple[int, str]:
@@ -197,18 +179,30 @@ def run_email_check(args) -> Tuple[int, str]:
     except RuntimeError as exc:
         return 3, f"UNKNOWN - {exc}"
 
+    ctx = ssl.create_default_context()
+    imap = imaplib.IMAP4_SSL(args.imap_host, args.imap_port, ssl_context=ctx)
     try:
-        msg_ids, criteria = find_matching_message_ids(args)
-    except Exception as exc:
-        return 3, f"UNKNOWN - mailbox poll failed: {exc}"
+        imap.login(args.imap_user, args.imap_password)
 
-    if not msg_ids:
-        return 2, f"CRITICAL - no matching mail found; criteria=[{criteria}]"
+        try:
+            msg_ids, criteria = find_matching_message_ids(args, imap)
+        except Exception as exc:
+            return 3, f"UNKNOWN - mailbox poll failed: {exc}"
 
-    try:
-        valid_ids, metrics = collect_valid_matches(args, msg_ids)
-    except Exception as exc:
-        return 3, f"UNKNOWN - mailbox validation failed: {exc}"
+        if not msg_ids:
+            return 2, f"CRITICAL - no matching mail found; criteria=[{criteria}]"
+
+        try:
+            valid_ids, metrics = collect_valid_matches(args, imap, msg_ids)
+        except Exception as exc:
+            return 3, f"UNKNOWN - mailbox validation failed: {exc}"
+
+    finally:
+        try:
+            imap.close()
+        except Exception:
+            pass
+        imap.logout()
 
     if valid_ids:
         send_to_delivery_text = (
