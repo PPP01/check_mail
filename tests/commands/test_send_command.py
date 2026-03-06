@@ -20,6 +20,7 @@ def _args() -> SimpleNamespace:
         smtp_password="",
         smtp_starttls=True,
         smtp_ssl=False,
+        smtp_verify_tls=True,
     )
 
 
@@ -76,3 +77,33 @@ def test_run_send_command_returns_error_when_backend_send_fails(monkeypatch, cap
     captured = capsys.readouterr().out
     assert rc == 3
     assert "ERROR - send failed" in captured
+
+
+def test_run_send_command_smtp_success(monkeypatch, capsys) -> None:
+    args = _args()
+    args.send_backend = "smtp"
+    args.smtp_host = "smtp.example.net"
+    args.smtp_ssl = True
+    args.smtp_verify_tls = False
+
+    class FakeSmtp:
+        def __init__(self, host, port, timeout=None, context=None):
+            self.host = host
+            self.port = port
+            self.context = context
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def send_message(self, _msg):
+            pass
+
+    monkeypatch.setattr("mail_check_app.commands.send_command.smtplib.SMTP_SSL", FakeSmtp)
+
+    rc = run_send_command(args)
+
+    assert rc == 0
+    assert "OK - send command delivered test mail via backend=smtp" in capsys.readouterr().out

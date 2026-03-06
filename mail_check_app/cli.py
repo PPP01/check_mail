@@ -120,6 +120,12 @@ def _add_send_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         default=os.getenv("MAIL_SEND_SMTP_SSL", "0") == "1",
     )
+    parser.add_argument(
+        "--smtp-verify-tls",
+        action="store_true",
+        default=os.getenv("MAIL_SEND_SMTP_VERIFY_TLS", "1") == "1",
+        help="Verify SMTP TLS certificate (env: MAIL_SEND_SMTP_VERIFY_TLS=0/1).",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
