@@ -1,8 +1,12 @@
+import json
 from types import SimpleNamespace
+
+import httpx
+import pytest
 
 from mail_check_app.shared.icinga_api import (
     _allow_debug_password_output,
-    build_icinga_submit,
+    build_icinga_payload,
     missing_icinga_args,
     submit_passive_result,
     split_plugin_output_and_perfdata,
@@ -32,11 +36,10 @@ def test_split_plugin_output_and_perfdata_parses_perfdata() -> None:
     assert perfdata == ["metric_a=1s;;;;", "metric_b=2;;;;"]
 
 
-def test_build_icinga_submit_builds_payload_and_auth_header() -> None:
+def test_build_icinga_payload_builds_expected_structure() -> None:
     args = _args()
 
-    payload, headers = build_icinga_submit(
-        endpoint="https://unused",
+    payload = build_icinga_payload(
         args=args,
         exit_status=2,
         output="CRITICAL - failed | foo=1;;;;",
@@ -46,8 +49,6 @@ def test_build_icinga_submit_builds_payload_and_auth_header() -> None:
     assert payload["exit_status"] == 2
     assert payload["plugin_output"] == "CRITICAL - failed"
     assert payload["performance_data"] == ["foo=1;;;;"]
-    assert "Authorization" in headers
-    assert headers["Authorization"].startswith("Basic ")
 
 
 def test_missing_icinga_args_returns_expected_keys() -> None:
@@ -107,3 +108,57 @@ def test_submit_passive_result_shows_password_only_if_explicitly_allowed(monkeyp
     captured = capsys.readouterr().out
     assert result == "dry-run: submit skipped"
     assert "api:pw" in captured
+
+
+def test_submit_passive_result_success(monkeypatch) -> None:
+    args = _args()
+    
+    class FakeResponse:
+        def __init__(self):
+            self.status_code = 200
+            self.text = '{"results": [{"code": 200, "status": "Filter matched 1 service(s)"}]}'
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return json.loads(self.text)
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    status = submit_passive_result(args, 0, "OK - test")
+    assert "Filter matched 1 service(s)" in status
+
+
+def test_submit_passive_result_handles_api_error(monkeypatch) -> None:
+    args = _args()
+    
+    class FakeResponse:
+        def __init__(self):
+            self.status_code = 404
+            self.text = "Not Found"
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("404", request=None, response=self)
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    with pytest.raises(RuntimeError, match="Icinga-API gab Status 404 zurück"):
+        submit_passive_result(args, 2, "CRITICAL - test")
