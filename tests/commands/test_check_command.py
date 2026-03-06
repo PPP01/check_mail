@@ -57,7 +57,7 @@ def test_run_check_command_fails_when_icinga_args_missing(monkeypatch, capsys) -
 
     captured = capsys.readouterr().out
     assert rc == 3
-    assert "Icinga settings missing" in captured
+    assert "Icinga-Einstellungen fehlen" in captured
 
 
 def test_run_check_command_submits_to_icinga_on_success(monkeypatch, capsys) -> None:
@@ -203,7 +203,7 @@ def test_run_email_check_uses_single_connection(monkeypatch) -> None:
     rc, output = run_email_check(args)
 
     assert rc == 0
-    assert "Mail Check OK" in output
+    assert "Passende Mail gefunden" in output
     assert fake_imap.login_calls == 1
     assert fake_imap.select_calls == 2  # Once in search, once in collect_valid_matches (still in the same connection)
     assert fake_imap.search_calls == 1
