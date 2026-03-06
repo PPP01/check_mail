@@ -12,16 +12,17 @@ from ..shared.jwt_utils import parse_mailcheck_timestamp, validate_mailcheck_sec
 
 
 def decode_header_val(value: str) -> str:
+    """Dekodiert einen Header-Wert für die IMAP-Suche und maskiert Sonderzeichen."""
     safe = value.encode("ascii", errors="ignore").decode("ascii")
     escaped = safe.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
 
 def find_matching_message_ids(args, imap: imaplib.IMAP4_SSL) -> Tuple[List[bytes], str]:
-    """Search IMAP for messages matching configured criteria and return message IDs."""
+    """Durchsucht das IMAP-Postfach nach Nachrichten, die den Kriterien entsprechen."""
     status, _ = imap.select(args.mailbox)
     if status != "OK":
-        raise RuntimeError(f"Cannot select mailbox {args.mailbox!r}")
+        raise RuntimeError(f"Postfach {args.mailbox!r} konnte nicht ausgewählt werden")
 
     criteria: List[str] = []
     if not args.include_seen:
@@ -37,13 +38,14 @@ def find_matching_message_ids(args, imap: imaplib.IMAP4_SSL) -> Tuple[List[bytes
 
     status, data = imap.search(None, *criteria)
     if status != "OK":
-        raise RuntimeError("IMAP SEARCH failed")
+        raise RuntimeError("IMAP-Suche fehlgeschlagen")
 
     msg_ids = data[0].split() if data and data[0] else []
     return msg_ids, " ".join(criteria)
 
 
 def extract_body_text(message) -> str:
+    """Extrahiert den Textinhalt (Plaintext) aus einer E-Mail-Nachricht."""
     if message.is_multipart():
         text_parts: List[str] = []
         for part in message.walk():
@@ -66,7 +68,7 @@ def extract_body_text(message) -> str:
 
 
 def extract_mailcheck_meta(message) -> Tuple[str, Optional[datetime]]:
-    """Extract MailCheck JWT and send timestamp from headers or fallback body lines."""
+    """Extrahiert das JWT und den Sende-Zeitstempel aus den Headern oder dem Body."""
     header_token = (message.get("X-Mail-Check-Jwt") or "").strip()
     header_sent_at = (message.get("X-Mail-Check-Sent-At") or "").strip()
     sent_at = parse_mailcheck_timestamp(header_sent_at)
@@ -86,6 +88,7 @@ def extract_mailcheck_meta(message) -> Tuple[str, Optional[datetime]]:
 
 
 def extract_received_timestamp(message) -> Optional[datetime]:
+    """Ermittelt den Empfangszeitstempel aus den 'Received'-Headern der E-Mail."""
     for received in message.get_all("Received", []):
         candidate = received.rsplit(";", 1)[-1].strip() if ";" in received else received.strip()
         if not candidate:
@@ -105,7 +108,7 @@ def extract_received_timestamp(message) -> Optional[datetime]:
 def collect_valid_matches(
     args, imap: imaplib.IMAP4_SSL, msg_ids: List[bytes]
 ) -> Tuple[List[bytes], Dict[str, Optional[float]]]:
-    """Validate JWTs for candidate messages and compute delivery timing metrics."""
+    """Validiert JWTs für Kandidaten-Mails und berechnet Zustellungs-Metriken."""
     if not msg_ids:
         return [], {
             "mail_delivery_seconds": None,
@@ -123,7 +126,7 @@ def collect_valid_matches(
 
     status, _ = imap.select(args.mailbox)
     if status != "OK":
-        raise RuntimeError(f"Cannot select mailbox {args.mailbox!r}")
+        raise RuntimeError(f"Postfach {args.mailbox!r} konnte nicht ausgewählt werden")
 
     for msg_id in reversed(msg_ids):
         fetch_status, fetch_data = imap.fetch(msg_id, "(RFC822)")
@@ -171,9 +174,9 @@ def collect_valid_matches(
 
 
 def run_email_check(args) -> Tuple[int, str]:
-    """Run mailbox validation and return plugin exit code plus plugin output string."""
+    """Führt die Postfach-Validierung durch und gibt Exit-Code und Nagios-Output zurück."""
     if not args.mail_jwt_secret:
-        return 3, "UNKNOWN - MAIL_CHECK_JWT_SECRET is required for mail validation."
+        return 3, "UNKNOWN - MAIL_CHECK_JWT_SECRET ist für die Validierung erforderlich."
     try:
         validate_mailcheck_secret(args.mail_jwt_secret)
     except RuntimeError as exc:
@@ -187,15 +190,15 @@ def run_email_check(args) -> Tuple[int, str]:
         try:
             msg_ids, criteria = find_matching_message_ids(args, imap)
         except Exception as exc:
-            return 3, f"UNKNOWN - mailbox poll failed: {exc}"
+            return 3, f"UNKNOWN - Postfach-Abfrage fehlgeschlagen: {exc}"
 
         if not msg_ids:
-            return 2, f"CRITICAL - no matching mail found; criteria=[{criteria}]"
+            return 2, f"CRITICAL - keine passende Mail gefunden; Kriterien=[{criteria}]"
 
         try:
             valid_ids, metrics = collect_valid_matches(args, imap, msg_ids)
         except Exception as exc:
-            return 3, f"UNKNOWN - mailbox validation failed: {exc}"
+            return 3, f"UNKNOWN - Postfach-Validierung fehlgeschlagen: {exc}"
 
     finally:
         try:
@@ -228,16 +231,16 @@ def run_email_check(args) -> Tuple[int, str]:
         perfdata = f" | {' '.join(perfdata_parts)}" if perfdata_parts else ""
         return (
             0,
-            f"Mail Check OK: expected mail found ({len(valid_ids)} valid match(es)) - "
+            f"Mail Check OK: Passende Mail gefunden ({len(valid_ids)} gültige Treffer) - "
             f"send_to_delivery_seconds={send_to_delivery_text} "
             f"delivery_to_check_seconds={delivery_to_check_text} "
             f"mail_delivery_seconds={end_to_end_text}{perfdata}",
         )
-    return 2, "CRITICAL - matching mail found, but JWT/JWS token validation failed (invalid signature, malformed token, or expired token)."
+    return 2, "CRITICAL - passende Mail gefunden, aber JWT-Validierung fehlgeschlagen (ungültige Signatur oder abgelaufen)."
 
 
 def run_check_command(args) -> int:
-    """Run `check` and optionally submit the result as passive check to Icinga."""
+    """Führt 'check' aus und übermittelt das Ergebnis optional passiv an Icinga."""
     exit_code, output = run_email_check(args)
     if args.no_icinga_submit or not args.icinga_passive_check:
         print(output)
@@ -245,14 +248,14 @@ def run_check_command(args) -> int:
 
     missing = missing_icinga_args(args)
     if missing:
-        print(f"UNKNOWN - Icinga settings missing: {', '.join(missing)}")
+        print(f"UNKNOWN - Icinga-Einstellungen fehlen: {', '.join(missing)}")
         return 3
 
     try:
         submit_status = submit_passive_result(args, exit_code, output)
         print(f"Icinga submit OK - {submit_status}")
     except Exception as exc:
-        print(f"UNKNOWN - Icinga submit failed: {exc}")
+        print(f"UNKNOWN - Icinga submit fehlgeschlagen: {exc}")
         return 3
 
     print(output)

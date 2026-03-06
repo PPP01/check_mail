@@ -98,7 +98,7 @@ Backend-spezifisch:
 
 - `sendmail`: `MAIL_SEND_SENDMAIL_COMMAND` (Default: `/usr/sbin/sendmail -t -i`)
 - `mail`: `MAIL_SEND_MAIL_COMMAND` (Default: `/usr/bin/mail`)
-- `smtp`: `MAIL_SEND_SMTP_HOST` (Pflicht), plus `MAIL_SEND_SMTP_*`
+- `smtp`: `MAIL_SEND_SMTP_HOST` (Pflicht), plus `MAIL_SEND_SMTP_*` (z. B. `MAIL_SEND_SMTP_VERIFY_TLS`)
 
 Wichtig bei `sendmail`:
 

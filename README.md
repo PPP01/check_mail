@@ -235,7 +235,7 @@ Hinweis: `config/settings.env` ist geschützt und wird von `template-config` nic
 - `MAIL_SUBJECT_CONTAINS` und optional `MAIL_FROM_CONTAINS` verengen die Suche.
 - `MAIL_BODY_CONTAINS` sucht zusätzlich im Mail-Inhalt (Body).
 - `MAIL_CHECK_JWT_SECRET` wird zur JWT-Prüfung beim Empfang genutzt.
-- `MAIL_CHECK_JWT_MAX_AGE_SECONDS` begrenzt die maximale Token-Alterung.
+- `MAIL_CHECK_JWT_MAX_AGE_SECONDS` legt beim **Versand** die Gültigkeitsdauer des Tokens fest (Standard-`exp`-Claim).
 - `MAIL_CHECK_JWT_SECRET` muss mindestens 32 Zeichen lang sein.
 - `MAIL_INCLUDE_SEEN=1` berücksichtigt auch bereits gelesene Mails, mit `0` nur `UNSEEN`.
 - Mit `MAIL_DELETE_MATCH=1` werden Treffer nach dem Check gelöscht.
@@ -309,7 +309,8 @@ Backend-spezifisch:
 - `mail`: `MAIL_SEND_MAIL_COMMAND` (Standard: `/usr/bin/mail`)
 - `smtp`: `MAIL_SEND_SMTP_HOST`, `MAIL_SEND_SMTP_PORT`, optional
   `MAIL_SEND_SMTP_USER`, `MAIL_SEND_SMTP_PASSWORD`,
-  `MAIL_SEND_SMTP_STARTTLS`, `MAIL_SEND_SMTP_SSL`
+  `MAIL_SEND_SMTP_STARTTLS`, `MAIL_SEND_SMTP_SSL`,
+  `MAIL_SEND_SMTP_VERIFY_TLS` (Standard: `1`, Zertifikatsprüfung aktiv)
 
 Beispiele:
 
@@ -320,8 +321,8 @@ Beispiele:
 # mail
 ./mail_check.py send --send-backend mail
 
-# smtp
-./mail_check.py send --send-backend smtp --smtp-host smtp.example.net
+# smtp (mit Zertifikatsprüfung deaktiviert)
+./mail_check.py send --send-backend smtp --smtp-host smtp.example.net --smtp-verify-tls
 ```
 
 ## Einbindung in Icinga2
