@@ -144,8 +144,8 @@ def collect_valid_matches(
             jwt_issued_at = verify_mailcheck_jwt(
                 token=message_token,
                 secret=args.mail_jwt_secret,
-                max_age_seconds=args.mail_jwt_max_age_seconds,
             )
+
         except RuntimeError:
             continue
 
