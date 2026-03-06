@@ -113,10 +113,6 @@ def test_collect_valid_matches_expunge_depends_on_soft_delete_flag(monkeypatch) 
 
     def _run_with_soft_delete(soft_delete: bool):
         fake_imap = FakeImap()
-        monkeypatch.setattr(
-            "mail_check_app.commands.check_command.imaplib.IMAP4_SSL",
-            lambda *_args, **_kwargs: fake_imap,
-        )
         args = SimpleNamespace(
             imap_host="imap.example.net",
             imap_port=993,
@@ -128,7 +124,7 @@ def test_collect_valid_matches_expunge_depends_on_soft_delete_flag(monkeypatch) 
             delete_match=True,
             soft_delete_match=soft_delete,
         )
-        valid_ids, _metrics = collect_valid_matches(args, [b"1"])
+        valid_ids, _metrics = collect_valid_matches(args, fake_imap, [b"1"])
         return fake_imap, valid_ids
 
     hard_delete_imap, hard_valid_ids = _run_with_soft_delete(False)
@@ -140,3 +136,77 @@ def test_collect_valid_matches_expunge_depends_on_soft_delete_flag(monkeypatch) 
     assert soft_valid_ids == [b"1"]
     assert soft_delete_imap.stored == [(b"1", "+FLAGS", "\\Deleted")]
     assert soft_delete_imap.expunge_calls == 0
+
+
+def test_run_email_check_uses_single_connection(monkeypatch) -> None:
+    secret = "x" * 32
+    token = create_mailcheck_jwt(secret, datetime.now(timezone.utc))
+    message = EmailMessage()
+    message["X-Mail-Check-Jwt"] = token
+    message.set_content("body")
+    raw_message = message.as_bytes()
+
+    class FakeImap:
+        def __init__(self) -> None:
+            self.login_calls = 0
+            self.search_calls = 0
+            self.select_calls = 0
+            self.fetch_calls = 0
+            self.close_calls = 0
+            self.logout_calls = 0
+
+        def login(self, *_args):
+            self.login_calls += 1
+            return "OK", []
+
+        def select(self, _mailbox):
+            self.select_calls += 1
+            return "OK", []
+
+        def search(self, _charset, *_criteria):
+            self.search_calls += 1
+            return "OK", [b"1"]
+
+        def fetch(self, _msg_id, _what):
+            self.fetch_calls += 1
+            return "OK", [(b"1 (RFC822)", raw_message)]
+
+        def close(self):
+            self.close_calls += 1
+            return "OK", []
+
+        def logout(self):
+            self.logout_calls += 1
+            return "BYE", []
+
+    fake_imap = FakeImap()
+    monkeypatch.setattr(
+        "mail_check_app.commands.check_command.imaplib.IMAP4_SSL",
+        lambda *_args, **_kwargs: fake_imap,
+    )
+
+    args = SimpleNamespace(
+        imap_host="imap.example.net",
+        imap_port=993,
+        imap_user="user",
+        imap_password="pw",
+        mailbox="INBOX",
+        mail_jwt_secret=secret,
+        mail_jwt_max_age_seconds=60,
+        include_seen=False,
+        subject_contains="",
+        from_contains="",
+        body_contains="",
+        delete_match=False,
+    )
+
+    rc, output = run_email_check(args)
+
+    assert rc == 0
+    assert "Mail Check OK" in output
+    assert fake_imap.login_calls == 1
+    assert fake_imap.select_calls == 2  # Once in search, once in collect_valid_matches (still in the same connection)
+    assert fake_imap.search_calls == 1
+    assert fake_imap.fetch_calls == 1
+    assert fake_imap.close_calls == 1
+    assert fake_imap.logout_calls == 1
