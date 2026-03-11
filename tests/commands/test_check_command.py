@@ -1,3 +1,4 @@
+import imaplib
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from types import SimpleNamespace
@@ -32,6 +33,44 @@ def test_run_email_check_rejects_short_jwt_secret() -> None:
 
     assert rc == 3
     assert "mindestens 32 Zeichen" in output
+
+
+def test_run_email_check_returns_unknown_on_imap_login_failure(monkeypatch) -> None:
+    args = SimpleNamespace(
+        mail_jwt_secret="x" * 32,
+        imap_host="imap.example.net",
+        imap_port=993,
+        imap_user="user",
+        imap_password="wrong",
+    )
+
+    class FakeImap:
+        def __init__(self) -> None:
+            self.close_calls = 0
+            self.logout_calls = 0
+
+        def login(self, _user, _password) -> None:
+            raise imaplib.IMAP4.error("LOGIN failed")
+
+        def close(self) -> None:
+            self.close_calls += 1
+
+        def logout(self) -> None:
+            self.logout_calls += 1
+
+    fake_imap = FakeImap()
+    monkeypatch.setattr(
+        "mail_check_app.commands.check_command.imaplib.IMAP4_SSL",
+        lambda *_a, **_kw: fake_imap,
+    )
+
+    rc, output = run_email_check(args)
+
+    assert rc == 3
+    assert "IMAP-Anmeldung fehlgeschlagen" in output
+    # close/logout dürfen bei fehlgeschlagenem Login nicht aufgerufen werden
+    assert fake_imap.close_calls == 0
+    assert fake_imap.logout_calls == 0
 
 
 def test_run_check_command_without_submit_returns_email_result(monkeypatch, capsys) -> None:
