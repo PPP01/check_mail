@@ -166,7 +166,11 @@ def run_email_check(args) -> Tuple[int, str]:
         return 3, f"UNKNOWN - {exc}"
 
     ctx = ssl.create_default_context()
-    imap = imaplib.IMAP4_SSL(args.imap_host, args.imap_port, ssl_context=ctx)
+    try:
+        imap = imaplib.IMAP4_SSL(args.imap_host, args.imap_port, ssl_context=ctx)
+    except (OSError, ssl.SSLError) as exc:
+        return 3, f"UNKNOWN - IMAP-Verbindung fehlgeschlagen: {exc}"
+
     logged_in = False
     try:
         try:
@@ -194,7 +198,10 @@ def run_email_check(args) -> Tuple[int, str]:
                 imap.close()
             except Exception:
                 pass
-            imap.logout()
+            try:
+                imap.logout()
+            except Exception:
+                pass
 
     if valid_ids:
         send_to_delivery_text = (
