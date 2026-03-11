@@ -35,6 +35,26 @@ def test_run_email_check_rejects_short_jwt_secret() -> None:
     assert "mindestens 32 Zeichen" in output
 
 
+def test_run_email_check_returns_unknown_on_imap_connection_failure(monkeypatch) -> None:
+    args = SimpleNamespace(
+        mail_jwt_secret="x" * 32,
+        imap_host="imap.unreachable.example",
+        imap_port=993,
+        imap_user="user",
+        imap_password="pw",
+    )
+
+    monkeypatch.setattr(
+        "mail_check_app.commands.check_command.imaplib.IMAP4_SSL",
+        lambda *_a, **_kw: (_ for _ in ()).throw(OSError("Connection refused")),
+    )
+
+    rc, output = run_email_check(args)
+
+    assert rc == 3
+    assert "IMAP-Verbindung fehlgeschlagen" in output
+
+
 def test_run_email_check_returns_unknown_on_imap_login_failure(monkeypatch) -> None:
     args = SimpleNamespace(
         mail_jwt_secret="x" * 32,
