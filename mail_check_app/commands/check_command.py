@@ -167,8 +167,13 @@ def run_email_check(args) -> Tuple[int, str]:
 
     ctx = ssl.create_default_context()
     imap = imaplib.IMAP4_SSL(args.imap_host, args.imap_port, ssl_context=ctx)
+    logged_in = False
     try:
-        imap.login(args.imap_user, args.imap_password)
+        try:
+            imap.login(args.imap_user, args.imap_password)
+            logged_in = True
+        except imaplib.IMAP4.error as exc:
+            return 3, f"UNKNOWN - IMAP-Anmeldung fehlgeschlagen: {exc}"
 
         try:
             msg_ids, criteria = find_matching_message_ids(args, imap)
@@ -184,11 +189,12 @@ def run_email_check(args) -> Tuple[int, str]:
             return 3, f"UNKNOWN - Postfach-Validierung fehlgeschlagen: {exc}"
 
     finally:
-        try:
-            imap.close()
-        except Exception:
-            pass
-        imap.logout()
+        if logged_in:
+            try:
+                imap.close()
+            except Exception:
+                pass
+            imap.logout()
 
     if valid_ids:
         send_to_delivery_text = (

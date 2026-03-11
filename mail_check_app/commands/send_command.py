@@ -95,7 +95,9 @@ def send_via_smtp(args, message: EmailMessage) -> None:
     if args.smtp_verify_tls:
         context = ssl.create_default_context()
     else:
-        context = ssl._create_unverified_context()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
 
     smtp_kwargs = {"timeout": 15}
     if args.smtp_ssl:
