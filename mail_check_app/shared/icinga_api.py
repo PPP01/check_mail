@@ -21,12 +21,19 @@ def split_plugin_output_and_perfdata(output: str) -> Tuple[str, List[str]]:
     return plugin_output.strip(), perf_items
 
 
+def _escape_icinga_filter_value(value: str) -> str:
+    """Escaped Backslashes und Anführungszeichen für Icinga-Filter-Strings."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def build_icinga_payload(args, exit_status: int, output: str) -> dict:
     """Erstellt den JSON-Payload für die Icinga process-check-result API."""
     plugin_output, performance_data = split_plugin_output_and_perfdata(output)
+    host = _escape_icinga_filter_value(args.icinga_host)
+    service = _escape_icinga_filter_value(args.icinga_service)
     payload = {
         "type": "Service",
-        "filter": f'host.name=="{args.icinga_host}" && service.name=="{args.icinga_service}"',
+        "filter": f'host.name=="{host}" && service.name=="{service}"',
         "exit_status": exit_status,
         "plugin_output": plugin_output,
     }
