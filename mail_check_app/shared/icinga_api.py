@@ -67,16 +67,16 @@ def submit_passive_result(args, exit_status: int, output: str) -> str:
 
     if args.debug_icinga:
         split_output, split_perfdata = split_plugin_output_and_perfdata(output)
-        print("Icinga endpoint:", endpoint)
-        print("Icinga plugin_output:", split_output)
-        print("Icinga performance_data:", split_perfdata if split_perfdata else "[]")
-        print("Icinga payload:", json.dumps(payload, ensure_ascii=False))
+        print("Icinga-Endpunkt:", endpoint)
+        print("Icinga-Plugin-Output:", split_output)
+        print("Icinga-Performance-Daten:", split_perfdata if split_perfdata else "[]")
+        print("Icinga-Payload:", json.dumps(payload, ensure_ascii=False))
         print(
-            "Icinga curl:",
+            "Icinga-curl:",
             build_curl_command(endpoint, args, payload, include_password=_allow_debug_password_output(args)),
         )
         if args.icinga_dry_run:
-            return "dry-run: submit skipped"
+            return "dry-run: Übermittlung übersprungen"
 
     try:
         with httpx.Client(verify=args.icinga_verify_tls, timeout=15.0) as client:

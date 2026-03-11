@@ -121,7 +121,7 @@ def send_via_smtp(args, message: EmailMessage) -> None:
 def run_send_command(args) -> int:
     """Execute the `send` command and print Nagios-compatible output."""
     if not args.mail_jwt_secret:
-        print("ERROR - MAIL_CHECK_JWT_SECRET is required for send command.")
+        print("ERROR - MAIL_CHECK_JWT_SECRET wird für den send-Befehl benötigt.")
         return 3
     try:
         validate_mailcheck_secret(args.mail_jwt_secret)
@@ -142,8 +142,8 @@ def run_send_command(args) -> int:
 
     if not args.send_to or not args.send_from:
         print(
-            "ERROR - send requires sender/recipient. Set MAIL_SEND_TO and MAIL_SEND_FROM "
-            "or pass --send-to/--send-from."
+            "ERROR - Versand benötigt Absender und Empfänger. "
+            "MAIL_SEND_TO und MAIL_SEND_FROM setzen oder --send-to/--send-from übergeben."
         )
         return 3
 
@@ -157,17 +157,17 @@ def run_send_command(args) -> int:
         elif args.send_backend == "smtp":
             send_via_smtp(args, message)
         else:
-            print(f"ERROR - unsupported send backend: {args.send_backend}")
+            print(f"ERROR - Unbekanntes Send-Backend: {args.send_backend}")
             return 3
     except Exception as exc:
-        print(f"ERROR - send failed: {exc}")
+        print(f"ERROR - Versand fehlgeschlagen: {exc}")
         return 3
 
     send_seconds = max(0.0, time.perf_counter() - started)
     message_size = len(message.as_bytes())
     print(
-        f"OK - send command delivered test mail via backend={args.send_backend}; "
-        f"to={args.send_to}; subject={args.send_subject!r} "
+        f"OK - Test-Mail versendet via Backend={args.send_backend}; "
+        f"an={args.send_to}; Betreff={args.send_subject!r} "
         f"| send_command_seconds={send_seconds:.3f}s;;;; send_message_bytes={message_size}B;;;;"
     )
     return 0
