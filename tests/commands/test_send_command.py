@@ -79,6 +79,26 @@ def test_run_send_command_returns_error_when_backend_send_fails(monkeypatch, cap
     assert "ERROR - send failed" in captured
 
 
+def test_run_send_command_mail_cmd_uses_shared_message(monkeypatch, capsys) -> None:
+    args = _args()
+    args.send_backend = "mail"
+
+    received: dict = {}
+
+    def _fake_send(_args, message) -> None:
+        received["body"] = message.get_content()
+        received["jwt_header"] = message["X-Mail-Check-Jwt"]
+
+    monkeypatch.setattr("mail_check_app.commands.send_command.send_via_mail_cmd", _fake_send)
+
+    rc = run_send_command(args)
+
+    assert rc == 0
+    assert "OK - send command delivered test mail via backend=mail" in capsys.readouterr().out
+    # JWT im Body und im Header müssen identisch sein
+    assert received["jwt_header"] in received["body"]
+
+
 def test_run_send_command_smtp_success(monkeypatch, capsys) -> None:
     args = _args()
     args.send_backend = "smtp"
