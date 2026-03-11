@@ -19,7 +19,7 @@ def test_run_icinga_command_fails_when_required_args_missing(monkeypatch, capsys
 
     captured = capsys.readouterr().out
     assert rc == 3
-    assert "Icinga settings missing" in captured
+    assert "Icinga-Einstellungen fehlen" in captured
 
 
 def test_run_icinga_command_submits_test_payload(monkeypatch, capsys) -> None:
@@ -33,4 +33,4 @@ def test_run_icinga_command_submits_test_payload(monkeypatch, capsys) -> None:
     captured = capsys.readouterr().out
     assert rc == 0
     assert "Icinga submit OK - submitted" in captured
-    assert "TEST - icinga command submitted test payload" in captured
+    assert "TEST - Icinga-Befehl hat Test-Payload übermittelt" in captured
