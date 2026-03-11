@@ -119,7 +119,8 @@ def format_env_value(value: str) -> str:
         return ""
     if re.fullmatch(r"[A-Za-z0-9._/@:+-]+", value):
         return value
-    return "'" + value.replace("'", "'\"'\"'") + "'"
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def write_match_criteria_env_file(path: Path, values: Dict[str, str]) -> None:
