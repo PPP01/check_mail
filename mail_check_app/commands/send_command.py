@@ -66,10 +66,9 @@ def send_via_sendmail(args, message: EmailMessage) -> None:
         raise RuntimeError(f"sendmail command failed (exit={proc.returncode}): {stderr}")
 
 
-def send_via_mail_cmd(args) -> None:
-    sent_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    jwt_value = create_mailcheck_jwt(args.mail_jwt_secret, datetime.now(timezone.utc), args.mail_jwt_max_age_seconds)
-    body = f"MailCheckJwt: {jwt_value}\nMailCheckSentAt: {sent_at}\n\n{args.send_body}"
+def send_via_mail_cmd(args, message: EmailMessage) -> None:
+    """Send the message using the system mail command (body-only, no custom headers)."""
+    body = message.get_content()
 
     command = shlex.split(args.mail_command)
     if not command:
@@ -149,7 +148,7 @@ def run_send_command(args) -> int:
         if args.send_backend == "sendmail":
             send_via_sendmail(args, message)
         elif args.send_backend == "mail":
-            send_via_mail_cmd(args)
+            send_via_mail_cmd(args, message)
         elif args.send_backend == "smtp":
             send_via_smtp(args, message)
         else:
