@@ -6,6 +6,7 @@ import pytest
 
 from mail_check_app.shared.icinga_api import (
     _allow_debug_password_output,
+    _escape_icinga_filter_value,
     build_icinga_payload,
     missing_icinga_args,
     submit_passive_result,
@@ -49,6 +50,24 @@ def test_build_icinga_payload_builds_expected_structure() -> None:
     assert payload["exit_status"] == 2
     assert payload["plugin_output"] == "CRITICAL - failed"
     assert payload["performance_data"] == ["foo=1;;;;"]
+
+
+def test_escape_icinga_filter_value_escapes_quotes_and_backslashes() -> None:
+    assert _escape_icinga_filter_value('foo"bar') == 'foo\\"bar'
+    assert _escape_icinga_filter_value("foo\\bar") == "foo\\\\bar"
+    assert _escape_icinga_filter_value('a\\"b') == 'a\\\\\\"b'
+    assert _escape_icinga_filter_value("normal") == "normal"
+
+
+def test_build_icinga_payload_escapes_host_and_service_in_filter() -> None:
+    args = _args()
+    args.icinga_host = 'host"evil'
+    args.icinga_service = "svc\\x"
+
+    payload = build_icinga_payload(args, 0, "OK")
+
+    assert r'host.name=="host\"evil"' in payload["filter"]
+    assert r'service.name=="svc\\x"' in payload["filter"]
 
 
 def test_missing_icinga_args_returns_expected_keys() -> None:
