@@ -48,9 +48,6 @@ def send_via_sendmail(args, message: EmailMessage) -> None:
             break
         if token == "--":
             break
-        if token in {"-f", "-r"} and idx + 1 < len(command):
-            has_sender_flag = True
-            break
     if args.send_from and not has_sender_flag:
         command.extend(["-f", args.send_from])
 
