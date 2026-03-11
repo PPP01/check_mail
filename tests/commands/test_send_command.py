@@ -127,3 +127,50 @@ def test_run_send_command_smtp_success(monkeypatch, capsys) -> None:
 
     assert rc == 0
     assert "OK - send command delivered test mail via backend=smtp" in capsys.readouterr().out
+
+
+def test_run_send_command_smtp_starttls_calls_starttls(monkeypatch, capsys) -> None:
+    args = _args()
+    args.send_backend = "smtp"
+    args.smtp_host = "smtp.example.net"
+    args.smtp_ssl = False
+    args.smtp_starttls = True
+    args.smtp_verify_tls = False
+
+    class FakeSmtp:
+        def __init__(self, host, port, timeout=None):
+            self.starttls_calls = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def starttls(self, context=None):
+            self.starttls_calls += 1
+
+        def login(self, user, password):
+            pass
+
+        def send_message(self, _msg):
+            pass
+
+    fake_smtp = FakeSmtp.__new__(FakeSmtp)
+    fake_smtp.starttls_calls = 0
+
+    class TrackingSmtp(FakeSmtp):
+        _instance = None
+
+        def __init__(self, host, port, timeout=None):
+            TrackingSmtp._instance = self
+            self.starttls_calls = 0
+
+    monkeypatch.setattr("mail_check_app.commands.send_command.smtplib.SMTP", TrackingSmtp)
+
+    rc = run_send_command(args)
+
+    assert rc == 0
+    assert "OK - send command delivered test mail via backend=smtp" in capsys.readouterr().out
+    assert TrackingSmtp._instance is not None
+    assert TrackingSmtp._instance.starttls_calls == 1
