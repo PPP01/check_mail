@@ -110,7 +110,7 @@ def test_submit_passive_result_masks_password_in_debug_curl(monkeypatch, capsys)
     result = submit_passive_result(args, 0, "OK - test")
 
     captured = capsys.readouterr().out
-    assert result == "dry-run: submit skipped"
+    assert result == "dry-run: Übermittlung übersprungen"
     assert "api:*****" in captured
     assert "api:pw" not in captured
 
@@ -125,7 +125,7 @@ def test_submit_passive_result_shows_password_only_if_explicitly_allowed(monkeyp
     result = submit_passive_result(args, 0, "OK - test")
 
     captured = capsys.readouterr().out
-    assert result == "dry-run: submit skipped"
+    assert result == "dry-run: Übermittlung übersprungen"
     assert "api:pw" in captured
 
 

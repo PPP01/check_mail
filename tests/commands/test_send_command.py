@@ -61,7 +61,7 @@ def test_run_send_command_sendmail_success(monkeypatch, capsys) -> None:
     captured = capsys.readouterr().out
     assert rc == 0
     assert called["value"] is True
-    assert "OK - send command delivered test mail via backend=sendmail" in captured
+    assert "OK - Test-Mail versendet via Backend=sendmail" in captured
 
 
 def test_run_send_command_returns_error_when_backend_send_fails(monkeypatch, capsys) -> None:
@@ -76,7 +76,7 @@ def test_run_send_command_returns_error_when_backend_send_fails(monkeypatch, cap
 
     captured = capsys.readouterr().out
     assert rc == 3
-    assert "ERROR - send failed" in captured
+    assert "ERROR - Versand fehlgeschlagen" in captured
 
 
 def test_run_send_command_mail_cmd_uses_shared_message(monkeypatch, capsys) -> None:
@@ -94,7 +94,7 @@ def test_run_send_command_mail_cmd_uses_shared_message(monkeypatch, capsys) -> N
     rc = run_send_command(args)
 
     assert rc == 0
-    assert "OK - send command delivered test mail via backend=mail" in capsys.readouterr().out
+    assert "OK - Test-Mail versendet via Backend=mail" in capsys.readouterr().out
     # JWT im Body und im Header müssen identisch sein
     assert received["jwt_header"] in received["body"]
 
@@ -126,7 +126,7 @@ def test_run_send_command_smtp_success(monkeypatch, capsys) -> None:
     rc = run_send_command(args)
 
     assert rc == 0
-    assert "OK - send command delivered test mail via backend=smtp" in capsys.readouterr().out
+    assert "OK - Test-Mail versendet via Backend=smtp" in capsys.readouterr().out
 
 
 def test_run_send_command_smtp_starttls_calls_starttls(monkeypatch, capsys) -> None:
@@ -171,7 +171,7 @@ def test_run_send_command_smtp_starttls_calls_starttls(monkeypatch, capsys) -> N
     rc = run_send_command(args)
 
     assert rc == 0
-    assert "OK - send command delivered test mail via backend=smtp" in capsys.readouterr().out
+    assert "OK - Test-Mail versendet via Backend=smtp" in capsys.readouterr().out
     assert TrackingSmtp._instance is not None
     assert TrackingSmtp._instance.starttls_calls == 1
 
@@ -205,4 +205,4 @@ def test_run_send_command_smtp_plaintext_prints_warning(monkeypatch, capsys) -> 
     assert rc == 0
     assert "WARNING" in captured
     assert "unverschlüsselt" in captured
-    assert "OK - send command delivered test mail via backend=smtp" in captured
+    assert "OK - Test-Mail versendet via Backend=smtp" in captured
