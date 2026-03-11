@@ -1,6 +1,9 @@
+import os
 from types import SimpleNamespace
 
-from mail_check_app.commands.template_config_command import run_template_config_command
+from dotenv import load_dotenv
+
+from mail_check_app.commands.template_config_command import format_env_value, run_template_config_command
 
 
 def _args(template_file: str, output: str) -> SimpleNamespace:
@@ -46,7 +49,7 @@ def test_run_template_config_command_creates_match_criteria_file(monkeypatch, tm
 
     assert rc == 0
     content = output.read_text(encoding="utf-8")
-    assert "MAIL_SUBJECT_CONTAINS='Alarm Mail'" in content
+    assert 'MAIL_SUBJECT_CONTAINS="Alarm Mail"' in content
     assert "MAIL_FROM_CONTAINS=monitor@example.net" in content
 
 
@@ -90,3 +93,27 @@ def test_run_template_config_command_rejects_new_config_outside_config(monkeypat
     rc = run_template_config_command(args)
 
     assert rc == 3
+
+
+def test_format_env_value_round_trip(tmp_path) -> None:
+    """format_env_value muss dotenv-kompatible Syntax erzeugen (Round-Trip-Test)."""
+    test_cases = [
+        "simple",
+        "with spaces",
+        "it's quoted",
+        'say "hello"',
+        "back\\slash",
+        "apos' and \"quote\"",
+        "Server: it's broken",
+    ]
+    env_file = tmp_path / "test.env"
+    for original in test_cases:
+        env_file.write_text(f"TEST_KEY={format_env_value(original)}\n", encoding="utf-8")
+        # Umgebungsvariable vor dem Laden entfernen
+        os.environ.pop("TEST_KEY", None)
+        load_dotenv(dotenv_path=env_file, override=True)
+        assert os.getenv("TEST_KEY") == original, (
+            f"Round-Trip fehlgeschlagen für {original!r}: "
+            f"formatiert als {format_env_value(original)!r}, "
+            f"zurückgelesen als {os.getenv('TEST_KEY')!r}"
+        )
