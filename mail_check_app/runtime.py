@@ -35,10 +35,10 @@ def read_env_key(path: Path, key: str) -> str:
                 if name.strip() != key:
                     continue
                 cleaned = value.strip()
-                if (cleaned.startswith("'") and cleaned.endswith("'")) or (
-                    cleaned.startswith('"') and cleaned.endswith('"')
-                ):
+                if cleaned.startswith("'") and cleaned.endswith("'"):
                     cleaned = cleaned[1:-1]
+                elif cleaned.startswith('"') and cleaned.endswith('"'):
+                    cleaned = cleaned[1:-1].replace('\\"', '"').replace("\\\\", "\\")
                 return cleaned.strip()
     except OSError as exc:
         raise RuntimeError(f"Could not read env file {path}: {exc}") from exc
