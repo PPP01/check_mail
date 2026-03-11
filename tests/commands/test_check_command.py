@@ -197,6 +197,41 @@ def test_collect_valid_matches_expunge_depends_on_soft_delete_flag(monkeypatch) 
     assert soft_delete_imap.expunge_calls == 0
 
 
+def test_collect_valid_matches_warns_on_store_failure(monkeypatch, capsys) -> None:
+    secret = "x" * 32
+    token = create_mailcheck_jwt(secret, datetime.now(timezone.utc), max_age_seconds=60)
+    message = EmailMessage()
+    message["X-Mail-Check-Jwt"] = token
+    message.set_content("body")
+    raw_message = message.as_bytes()
+
+    class FakeImap:
+        def select(self, _mailbox):
+            return "OK", []
+
+        def fetch(self, _msg_id, _what):
+            return "OK", [(b"1 (RFC822)", raw_message)]
+
+        def store(self, _msg_id, _action, _flag):
+            return "NO", [b"[NOPERM] Permission denied"]
+
+        def expunge(self):
+            return "OK", []
+
+    args = SimpleNamespace(
+        mailbox="INBOX",
+        mail_jwt_secret=secret,
+        mail_jwt_max_age_seconds=60,
+        delete_match=True,
+        soft_delete_match=False,
+    )
+    collect_valid_matches(args, FakeImap(), [b"1"])
+
+    captured = capsys.readouterr().out
+    assert "WARNING" in captured
+    assert "gelöscht" in captured
+
+
 def test_run_email_check_uses_single_connection(monkeypatch) -> None:
     secret = "x" * 32
     token = create_mailcheck_jwt(secret, datetime.now(timezone.utc), max_age_seconds=60)

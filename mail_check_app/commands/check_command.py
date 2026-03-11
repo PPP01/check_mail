@@ -148,8 +148,17 @@ def collect_valid_matches(
                 metrics["delivery_to_check_seconds"] = delivery_to_check
 
     if args.delete_match and valid_ids:
+        failed_deletes = []
         for valid_id in valid_ids:
-            imap.store(valid_id, "+FLAGS", "\\Deleted")
+            status, _ = imap.store(valid_id, "+FLAGS", "\\Deleted")
+            if status != "OK":
+                failed_deletes.append(valid_id)
+        if failed_deletes:
+            print(
+                f"WARNING - {len(failed_deletes)} von {len(valid_ids)} "
+                "Nachrichten konnten nicht als gelöscht markiert werden "
+                "(fehlende Schreibberechtigung?)."
+            )
         if not getattr(args, "soft_delete_match", False):
             imap.expunge()
 
