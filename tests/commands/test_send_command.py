@@ -174,3 +174,35 @@ def test_run_send_command_smtp_starttls_calls_starttls(monkeypatch, capsys) -> N
     assert "OK - send command delivered test mail via backend=smtp" in capsys.readouterr().out
     assert TrackingSmtp._instance is not None
     assert TrackingSmtp._instance.starttls_calls == 1
+
+
+def test_run_send_command_smtp_plaintext_prints_warning(monkeypatch, capsys) -> None:
+    args = _args()
+    args.send_backend = "smtp"
+    args.smtp_host = "smtp.example.net"
+    args.smtp_ssl = False
+    args.smtp_starttls = False
+    args.smtp_verify_tls = False
+
+    class FakeSmtp:
+        def __init__(self, host, port, timeout=None):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def send_message(self, _msg):
+            pass
+
+    monkeypatch.setattr("mail_check_app.commands.send_command.smtplib.SMTP", FakeSmtp)
+
+    rc = run_send_command(args)
+
+    captured = capsys.readouterr().out
+    assert rc == 0
+    assert "WARNING" in captured
+    assert "unverschlüsselt" in captured
+    assert "OK - send command delivered test mail via backend=smtp" in captured
