@@ -103,6 +103,12 @@ def send_via_smtp(args, message: EmailMessage) -> None:
     if args.smtp_ssl:
         smtp_kwargs["context"] = context
 
+    if not args.smtp_ssl and not args.smtp_starttls:
+        print(
+            f"WARNING - SMTP-Verbindung zu {args.smtp_host}:{args.smtp_port} "
+            "wird unverschlüsselt aufgebaut (smtp_ssl=0, smtp_starttls=0)."
+        )
+
     smtp_cls = smtplib.SMTP_SSL if args.smtp_ssl else smtplib.SMTP
     with smtp_cls(args.smtp_host, args.smtp_port, **smtp_kwargs) as client:
         if not args.smtp_ssl and args.smtp_starttls:

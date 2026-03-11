@@ -46,7 +46,18 @@ def read_env_key(path: Path, key: str) -> str:
 
 
 def load_runtime_env(config_override: str = "", require_active_profile: bool = True) -> str:
-    """Load default, optional override, and active-profile env files in the expected order."""
+    """Lädt Basis-, Override- und Aktiv-Profil-Env-Dateien in der erwarteten Reihenfolge.
+
+    Ladereihenfolge und Priorität:
+      1. config/settings.env  — Basis-Konfiguration (override=False)
+      2. --config <pfad>       — Override-Datei (override=True)
+      3. MAIL_ACTIVE_CONFIG    — Profil-spezifische Match-Kriterien (override=True)
+
+    Hinweis: override=False bei der Basis-Konfiguration bedeutet, dass bereits in der
+    Prozessumgebung gesetzte Variablen (z.B. per export) Vorrang vor settings.env haben.
+    Das ist in Cron/systemd-Umgebungen gewollt, kann aber bei der Fehlersuche verwirren,
+    wenn eine Variable in settings.env scheinbar ignoriert wird.
+    """
     load_dotenv(dotenv_path=DEFAULT_ENV_PATH, override=False)
 
     selected_config = config_override.strip() if config_override else ""

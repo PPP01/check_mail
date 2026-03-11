@@ -19,7 +19,7 @@ def decode_header_val(value: str) -> str:
     return f'"{escaped}"'
 
 
-def find_matching_message_ids(args, imap: imaplib.IMAP4_SSL) -> Tuple[List[bytes], str]:
+def find_matching_message_ids(args, imap: imaplib.IMAP4) -> Tuple[List[bytes], str]:
     """Durchsucht das IMAP-Postfach nach Nachrichten, die den Kriterien entsprechen."""
     status, _ = imap.select(args.mailbox)
     if status != "OK":
@@ -84,7 +84,7 @@ def extract_received_timestamp(message) -> Optional[datetime]:
 
 
 def collect_valid_matches(
-    args, imap: imaplib.IMAP4_SSL, msg_ids: List[bytes]
+    args, imap: imaplib.IMAP4, msg_ids: List[bytes]
 ) -> Tuple[List[bytes], Dict[str, Optional[float]]]:
     """Validiert JWTs für Kandidaten-Mails und berechnet Zustellungs-Metriken."""
     if not msg_ids:
