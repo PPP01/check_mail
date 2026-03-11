@@ -205,7 +205,9 @@ def test_run_email_check_uses_single_connection(monkeypatch) -> None:
     assert rc == 0
     assert "Passende Mail gefunden" in output
     assert fake_imap.login_calls == 1
-    assert fake_imap.select_calls == 2  # Once in search, once in collect_valid_matches (still in the same connection)
+    # 2x select(): einmal in find_matching_message_ids(), einmal defensiv in
+    # collect_valid_matches() — absichtlich, siehe Kommentar dort.
+    assert fake_imap.select_calls == 2
     assert fake_imap.search_calls == 1
     assert fake_imap.fetch_calls == 1
     assert fake_imap.close_calls == 1

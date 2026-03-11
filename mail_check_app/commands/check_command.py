@@ -102,6 +102,11 @@ def collect_valid_matches(
         "delivery_to_check_seconds": None,
     }
 
+    # Zweiter select()-Aufruf ist defensiv: find_matching_message_ids() hat
+    # bereits select() ausgeführt, aber bei manchen IMAP-Servern kann der
+    # Zustand nach search() instabil sein. Der zusätzliche Aufruf kostet
+    # einen Netzwerk-Round-Trip, stellt aber sicher, dass fetch() auf dem
+    # richtigen Postfach operiert.
     status, _ = imap.select(args.mailbox)
     if status != "OK":
         raise RuntimeError(f"Postfach {args.mailbox!r} konnte nicht ausgewählt werden")
