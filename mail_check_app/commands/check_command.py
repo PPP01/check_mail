@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 
 from ..shared.icinga_api import missing_icinga_args, submit_passive_result
 from ..shared.jwt_utils import parse_mailcheck_timestamp, validate_mailcheck_secret, verify_mailcheck_jwt
+from ..shared.mail_utils import extract_body_text
 
 
 def decode_header_val(value: str) -> str:
@@ -42,29 +43,6 @@ def find_matching_message_ids(args, imap: imaplib.IMAP4_SSL) -> Tuple[List[bytes
 
     msg_ids = data[0].split() if data and data[0] else []
     return msg_ids, " ".join(criteria)
-
-
-def extract_body_text(message) -> str:
-    """Extrahiert den Textinhalt (Plaintext) aus einer E-Mail-Nachricht."""
-    if message.is_multipart():
-        text_parts: List[str] = []
-        for part in message.walk():
-            if part.get_content_maintype() != "text":
-                continue
-            if part.get_content_disposition() == "attachment":
-                continue
-            try:
-                text_parts.append(part.get_content())
-            except Exception:
-                payload = part.get_payload(decode=True) or b""
-                text_parts.append(payload.decode("utf-8", errors="replace"))
-        return "\n".join(text_parts)
-
-    try:
-        return message.get_content()
-    except Exception:
-        payload = message.get_payload(decode=True) or b""
-        return payload.decode("utf-8", errors="replace")
 
 
 def extract_mailcheck_meta(message) -> Tuple[str, Optional[datetime]]:
@@ -124,6 +102,11 @@ def collect_valid_matches(
         "delivery_to_check_seconds": None,
     }
 
+    # Zweiter select()-Aufruf ist defensiv: find_matching_message_ids() hat
+    # bereits select() ausgeführt, aber bei manchen IMAP-Servern kann der
+    # Zustand nach search() instabil sein. Der zusätzliche Aufruf kostet
+    # einen Netzwerk-Round-Trip, stellt aber sicher, dass fetch() auf dem
+    # richtigen Postfach operiert.
     status, _ = imap.select(args.mailbox)
     if status != "OK":
         raise RuntimeError(f"Postfach {args.mailbox!r} konnte nicht ausgewählt werden")

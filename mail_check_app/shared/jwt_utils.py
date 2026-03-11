@@ -30,8 +30,7 @@ def create_mailcheck_jwt(secret: str, issued_at: datetime, max_age_seconds: int)
         "exp": exp,
         "jti": secrets.token_hex(12),
     }
-    token = jwt.encode(payload, secret, algorithm="HS256", headers={"typ": "JWT"})
-    return token if isinstance(token, str) else token.decode("utf-8")
+    return jwt.encode(payload, secret, algorithm="HS256", headers={"typ": "JWT"})
 
 
 def verify_mailcheck_jwt(token: str, secret: str) -> datetime:
